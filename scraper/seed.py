@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from scraper.db import get_engine, init_db
 from scraper.models import Bookmaker, Competition, CompetitionSource, MarketType
+from scraper.world_cup import WC_EGT_SEARCH_TERMS
 from sqlalchemy.orm import sessionmaker
 
 MARKET_TYPES = [
@@ -72,7 +73,7 @@ def seed_session(session: Session) -> None:
             "api_tournament",
             {
                 "tournament_name": "Световно Първенство",
-                "search_terms": ["South Africa", "Mexico", "Germany", "Brazil"],
+                "search_terms": WC_EGT_SEARCH_TERMS,
             },
             "https://www.winbet.bg/sport",
         ),
@@ -81,7 +82,7 @@ def seed_session(session: Session) -> None:
             "api_tournament",
             {
                 "tournament_name": "Световно Първенство",
-                "search_terms": ["South Africa", "Mexico", "Germany", "Brazil"],
+                "search_terms": WC_EGT_SEARCH_TERMS,
             },
             "https://www.inbet.bg/sport",
         ),

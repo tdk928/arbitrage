@@ -17,8 +17,8 @@ def main() -> None:
     parser.add_argument(
         "--time-window",
         default="today_tomorrow",
-        choices=["next_24h", "today_tomorrow", "all"],
-        help="'all' = no time filter (useful for World Cup full fixture list)",
+        choices=["next_24h", "today_tomorrow", "all", "world_cup"],
+        help="'world_cup' = all WC 2026 fixtures (Jun 11–Jul 20); use run_world_cup.py for dedicated flow",
     )
     parser.add_argument("--min-margin", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=10)

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from scraper.arbitrage import compute_arbitrage, rank_opportunities
@@ -57,6 +59,7 @@ def run_pipeline(
 
     all_fixtures: list[RawFixture] = []
     errors: list[str] = []
+    fixtures_by_bookmaker: dict[str, int] = {}
 
     for src in sources:
         bm = session.get(Bookmaker, src.bookmaker_id)
@@ -66,13 +69,14 @@ def run_pipeline(
             scraper = get_scraper(bm.slug)
             fixtures = scraper.list_fixtures(src.discovery_config or {})
             filtered = filter_fixtures(fixtures, time_window)
+            fixtures_by_bookmaker[bm.slug] = len(filtered)
             all_fixtures.extend(filtered)
         except Exception as exc:
+            fixtures_by_bookmaker[bm.slug] = 0
             errors.append(f"{bm.slug} list: {exc}")
 
     groups = group_fixtures(all_fixtures)
     match_by_id: dict[int, Match] = {}
-    fixture_to_match: dict[tuple[str, str], int] = {}
 
     for group in groups:
         if not group:
@@ -112,11 +116,8 @@ def run_pipeline(
         match.external_ids = external_ids
         match_by_id[match.id] = match
 
-        for fx in group:
-            fixture_to_match[(fx.bookmaker_slug, fx.external_id)] = match.id
-
-    # Fetch odds per match per bookmaker
     odds_by_match_market: dict[tuple[int, str], dict[str, list]] = {}
+    odds_by_bookmaker: dict[str, int] = defaultdict(int)
 
     for src in sources:
         bm = session.get(Bookmaker, src.bookmaker_id)
@@ -129,6 +130,8 @@ def run_pipeline(
                 continue
             try:
                 markets = scraper.fetch_markets(ext_id, src.discovery_config or {})
+                if not markets:
+                    continue
                 for mkt in markets:
                     mt = market_types.get(mkt.market_code)
                     if not mt:
@@ -144,6 +147,7 @@ def run_pipeline(
                             success=True,
                         )
                     )
+                    odds_by_bookmaker[bm.slug] += 1
                     key = (match.id, mkt.market_code)
                     if key not in odds_by_match_market:
                         odds_by_match_market[key] = {}
@@ -190,7 +194,47 @@ def run_pipeline(
     run.notes = "; ".join(errors[:20]) if errors else None
     session.commit()
 
-    return format_response(session, run, ranked, opportunities, match_by_id, market_types, limit)
+    bookmaker_coverage = _bookmaker_coverage(session, match_by_id)
+    total_opps = (
+        session.query(func.count(ArbitrageOpportunity.id))
+        .filter(ArbitrageOpportunity.scrape_run_id == run.id)
+        .scalar()
+    )
+
+    return format_response(
+        session,
+        run,
+        ranked,
+        match_by_id,
+        market_types,
+        limit,
+        stats={
+            "fixtures_by_bookmaker": fixtures_by_bookmaker,
+            "matches_linked": len(match_by_id),
+            "odds_snapshots_by_bookmaker": dict(odds_by_bookmaker),
+            "odds_snapshots_total": sum(odds_by_bookmaker.values()),
+            "opportunities_total": total_opps,
+            "bookmaker_coverage": bookmaker_coverage,
+        },
+    )
+
+
+def _bookmaker_coverage(session: Session, match_by_id: dict[int, Match]) -> list[dict[str, Any]]:
+    """How many bookmakers each linked match has."""
+    coverage: list[dict[str, Any]] = []
+    for match in sorted(match_by_id.values(), key=lambda m: m.kickoff_utc):
+        home = session.get(Team, match.home_team_id).name
+        away = session.get(Team, match.away_team_id).name
+        bms = sorted((match.external_ids or {}).keys())
+        coverage.append(
+            {
+                "match": f"{home} vs {away}",
+                "kickoff_utc": match.kickoff_utc.isoformat(),
+                "bookmaker_count": len(bms),
+                "bookmakers": bms,
+            }
+        )
+    return coverage
 
 
 def _get_or_create_team(session: Session, name: str) -> Team:
@@ -208,10 +252,10 @@ def format_response(
     session: Session,
     run: ScrapeRun,
     ranked: list,
-    opportunities: list,
     match_by_id: dict[int, Match],
     market_types: dict[str, MarketType],
     limit: int,
+    stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     code_by_id = {m.id: m.code for m in market_types.values()}
     opps_db = (
@@ -238,7 +282,7 @@ def format_response(
             }
         )
 
-    return {
+    result: dict[str, Any] = {
         "run_id": run.id,
         "scraped_at": (run.finished_at or run.started_at).isoformat(),
         "time_window": run.time_window,
@@ -247,3 +291,6 @@ def format_response(
         "errors": run.notes,
         "opportunities": out_opps,
     }
+    if stats:
+        result["stats"] = stats
+    return result

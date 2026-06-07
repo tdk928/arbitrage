@@ -7,6 +7,7 @@ from scraper.db import get_engine, init_db
 from scraper.models import ArbitrageOpportunity, Match, ScrapeRun, Team
 from scraper.pipeline import run_pipeline
 from scraper.seed import seed_session
+from scraper.world_cup import run_world_cup_pipeline
 
 router = APIRouter(prefix="/arbitrage", tags=["arbitrage"])
 
@@ -37,7 +38,7 @@ def run_arbitrage(
     competition: str = Query(default="world-cup-2026"),
     time_window: str = Query(
         default="today_tomorrow",
-        pattern="^(next_24h|today_tomorrow|all)$",
+        pattern="^(next_24h|today_tomorrow|all|world_cup)$",
     ),
     min_margin: float = Query(default=1.0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
@@ -51,6 +52,27 @@ def run_arbitrage(
             db,
             competition_slug=competition,
             time_window=time_window,
+            min_margin=min_margin,
+            limit=limit,
+            triggered_by="api",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/world-cup/run")
+def run_world_cup(
+    min_margin: float = Query(default=1.0, ge=0),
+    limit: int = Query(default=10, ge=1, le=100),
+    seed: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    """Scrape all World Cup 2026 fixtures from 6 bookmakers and compute arbitrage."""
+    if seed:
+        seed_session(db)
+    try:
+        return run_world_cup_pipeline(
+            db,
             min_margin=min_margin,
             limit=limit,
             triggered_by="api",

@@ -54,7 +54,23 @@ Use this **from 11 June 2026 onward** when WC fixtures are actually today/tomorr
 
 Until then, `opportunities: []` is **normal** — opener is 11 June, not today.
 
-### Test all WC fixtures (no date filter)
+### All World Cup 2026 fixtures (recommended on `world-cup-future` branch)
+
+Scrapes every WC match listed on all 6 bookmakers (Jun 11 – Jul 20), stores odds, computes arbitrage:
+
+```bash
+python -m scraper.run_world_cup --min-margin 1 --limit 10
+```
+
+Or via API:
+
+```bash
+curl -X POST "http://localhost:8000/arbitrage/world-cup/run?min_margin=1&limit=10"
+```
+
+Response includes `stats` with fixtures per bookmaker, matches linked, and coverage.
+
+### Test all fixtures (no date filter)
 
 ```bash
 python -m scraper.run_once --time-window all --min-margin 1 --limit 10
