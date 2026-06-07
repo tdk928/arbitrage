@@ -22,6 +22,7 @@ def main() -> None:
     )
     parser.add_argument("--min-margin", type=float, default=1.0)
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--budget", type=float, default=100.0, help="Stake budget in EUR")
     parser.add_argument("--seed", action="store_true", help="Run DB seed before scrape")
     args = parser.parse_args()
 
@@ -37,6 +38,7 @@ def main() -> None:
             time_window=args.time_window,
             min_margin=args.min_margin,
             limit=args.limit,
+            budget_eur=args.budget,
             triggered_by="cli",
         )
     print(json.dumps(result, indent=2, ensure_ascii=False))

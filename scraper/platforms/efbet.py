@@ -52,6 +52,7 @@ class EfbetScraper(PlatformScraper):
         return fixtures
 
     def fetch_markets(self, external_id: str, discovery_config: dict[str, Any]) -> list[MarketOdds]:
+        by_code: dict[str, MarketOdds] = {}
         tab_id = discovery_config.get("tab_id", 59354)
         with httpx.Client(headers=EFBET_HEADERS, timeout=30) as client:
             listing_url = f"{EFBET_API}/home-page/prematch-section/{tab_id}/limited"
@@ -60,9 +61,12 @@ class EfbetScraper(PlatformScraper):
                 for tab in section.get("tabs", []):
                     for ev in tab.get("sportEvents", []):
                         if str(ev.get("id")) == str(external_id):
-                            return extract_efbet_markets(ev)
+                            for m in extract_efbet_markets(ev):
+                                by_code[m.market_code] = m
             details = client.get(
                 f"{EFBET_API}/sport-event/details",
                 params={"sportEventId": external_id, "lang": "bg"},
             ).json()
-        return extract_efbet_markets(details)
+            for m in extract_efbet_markets(details):
+                by_code[m.market_code] = m
+        return list(by_code.values())

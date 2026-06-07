@@ -79,3 +79,12 @@ def rank_opportunities(
     limit: int = 10,
 ) -> list[OpportunityResult]:
     return sorted(opportunities, key=lambda o: o.margin_pct, reverse=True)[:limit]
+
+
+def allocate_stakes(budget_eur: float, odds: list[float]) -> tuple[list[float], float, float]:
+    """Split budget across arb legs; return stakes, guaranteed return, profit."""
+    implied = sum(1.0 / o for o in odds)
+    stakes = [round(budget_eur * (1.0 / o) / implied, 2) for o in odds]
+    guaranteed_return = round(budget_eur / implied, 2)
+    profit = round(guaranteed_return - budget_eur, 2)
+    return stakes, guaranteed_return, profit
