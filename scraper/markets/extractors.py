@@ -12,6 +12,15 @@ MARKET_CODES = (
     "CORNERS_OU_95",
 )
 
+_PLAIN_OU_OVER = frozenset({"over", "над"})
+_PLAIN_OU_UNDER = frozenset({"under", "под"})
+_EGT_GOALS_25_NAME = re.compile(r"^total goals 2\.5$", re.I)
+_EGT_CORNERS_LINE = re.compile(r"^total corners (8\.5|9\.5)$", re.I)
+_ALT_GOALS_TOTAL = re.compile(r"^общ брой(?: голове)?$", re.I)
+_ALT_CORNERS_TOTAL = re.compile(r"^общ брой корнери$", re.I)
+_LINE_TO_GOALS = {"2.5": "GOALS_OU_25"}
+_LINE_TO_CORNERS = {"8.5": "CORNERS_OU_85", "9.5": "CORNERS_OU_95"}
+
 
 def _parse_odd(value: Any) -> float | None:
     if value is None:
@@ -23,61 +32,95 @@ def _parse_odd(value: Any) -> float | None:
         return None
 
 
+def _is_egt_promo_1x2(name: str) -> bool:
+    """0% margin / early payout promo 1X2 (winbet & inbet EGT)."""
+    n = name.lower()
+    if "full time result enhanced odds" in n:
+        return True
+    if "0% марж" in n or "0% margin" in n:
+        return True
+    if "краен резултат 0% марж" in n:
+        return True
+    if "ранно изплащане" in n and "марж" in n:
+        return True
+    return False
+
+
+def _extract_egt_1x2(outcomes_raw: list[dict]) -> list[OutcomeOdd]:
+    outs: list[OutcomeOdd] = []
+    for o in outcomes_raw:
+        label = str(o.get("name", ""))
+        odd = _parse_odd(o.get("odds"))
+        if odd and label in ("1", "X", "2"):
+            outs.append(OutcomeOdd(name=label, odd=odd))
+    return outs if len(outs) == 3 else []
+
+
 def extract_egt_markets(data: dict[str, Any]) -> list[MarketOdds]:
     markets: list[MarketOdds] = []
     markets_data = data.get("marketsData") or {}
+    promo_1x2: list[OutcomeOdd] | None = None
+    regular_1x2: list[OutcomeOdd] | None = None
+
     for m in markets_data.values():
-        name = (m.get("name") or "").lower()
+        raw_name = m.get("name") or ""
+        name = raw_name.lower()
         template = m.get("radarMarketTemplateName")
         outcomes_raw = m.get("outcomes") or []
-        if "enhanced" in name:
-            continue
 
         if template == "3Way" and "full time result" in name:
-            outs = []
-            for o in outcomes_raw:
-                label = str(o.get("name", ""))
-                odd = _parse_odd(o.get("odds"))
-                if odd and label in ("1", "X", "2"):
-                    outs.append(OutcomeOdd(name=label, odd=odd))
-            if len(outs) == 3:
-                markets.append(MarketOdds(market_code="MATCH_1X2", outcomes=outs))
+            outs = _extract_egt_1x2(outcomes_raw)
+            if outs:
+                if _is_egt_promo_1x2(raw_name):
+                    promo_1x2 = outs
+                elif "enhanced" not in name:
+                    regular_1x2 = outs
 
-        if "total goals" in name or "брой голове" in name:
-            line = str(m.get("specialOddsValue") or m.get("line") or "")
-            if "2.5" in line or "2.5" in name:
-                outs = _extract_over_under(outcomes_raw)
-                if outs:
-                    markets.append(
-                        MarketOdds(market_code="GOALS_OU_25", outcomes=outs, line="2.5")
-                    )
-
-        if "corner" in name or "корнер" in name:
-            line = str(m.get("specialOddsValue") or m.get("line") or name)
+        if _is_egt_match_total_goals_25(name, template, m):
             outs = _extract_over_under(outcomes_raw)
-            if not outs:
-                continue
-            if "8.5" in line:
+            if outs:
                 markets.append(
-                    MarketOdds(market_code="CORNERS_OU_85", outcomes=outs, line="8.5")
+                    MarketOdds(market_code="GOALS_OU_25", outcomes=outs, line="2.5")
                 )
-            elif "9.5" in line:
-                markets.append(
-                    MarketOdds(market_code="CORNERS_OU_95", outcomes=outs, line="9.5")
-                )
-    return markets
+
+        corner_match = _EGT_CORNERS_LINE.match((m.get("name") or "").strip())
+        if corner_match:
+            outs = _extract_over_under(outcomes_raw)
+            if outs:
+                line = corner_match.group(1)
+                code = _LINE_TO_CORNERS[line]
+                markets.append(MarketOdds(market_code=code, outcomes=outs, line=line))
+
+    if promo_1x2:
+        markets.append(MarketOdds(market_code="MATCH_1X2", outcomes=promo_1x2))
+    elif regular_1x2:
+        markets.append(MarketOdds(market_code="MATCH_1X2", outcomes=regular_1x2))
+
+    return _dedupe_markets(markets)
+
+
+def _is_egt_match_total_goals_25(name: str, template: str | None, market: dict) -> bool:
+    """Full-match O/U 2.5 only — excludes HT/FT combos and team totals."""
+    if template != "total":
+        return False
+    if _EGT_GOALS_25_NAME.match(name.strip()):
+        return True
+    line = str(market.get("specialOddsValue") or market.get("line") or "")
+    if "брой голове" in name and "2.5" in line:
+        return "&" not in name and "half" not in name
+    return False
 
 
 def _extract_over_under(outcomes_raw: list[dict]) -> list[OutcomeOdd]:
     over = under = None
     for o in outcomes_raw:
-        name = str(o.get("name", "")).lower()
+        name = str(o.get("name", "")).strip().lower()
         odd = _parse_odd(o.get("odds"))
         if not odd:
             continue
-        if name in ("over", "над") or name.startswith("over") or "над" in name:
+        if name in _PLAIN_OU_OVER:
             over = OutcomeOdd(name="Over", odd=odd)
-        elif name in ("under", "под") or name.startswith("under") or "под" in name:
+        elif name in _PLAIN_OU_UNDER:
             under = OutcomeOdd(name="Under", odd=odd)
     if over and under:
         return [over, under]
@@ -89,7 +132,8 @@ def extract_altenar_markets(data: dict[str, Any]) -> list[MarketOdds]:
     odds_by_id = {o["id"]: o for o in data.get("odds", [])}
 
     for m in data.get("markets", []):
-        mname = (m.get("name") or "").lower()
+        raw_name = (m.get("name") or "").strip()
+        mname = raw_name.lower()
         type_id = m.get("typeId")
 
         if type_id == 1 and mname == "1x2":
@@ -97,40 +141,19 @@ def extract_altenar_markets(data: dict[str, Any]) -> list[MarketOdds]:
             if len(outs) == 3:
                 markets.append(MarketOdds(market_code="MATCH_1X2", outcomes=outs))
 
-        if type_id == 12 or "total" in mname or "голове" in mname:
-            sv = str(m.get("sv") or "")
-            if "2.5" in sv:
-                outs = _altenar_ou_market(m, odds_by_id)
+        if type_id == 18 and _ALT_GOALS_TOTAL.match(raw_name):
+            outs = _altenar_pick_line(m, odds_by_id, "2.5")
+            if outs:
+                markets.append(MarketOdds(market_code="GOALS_OU_25", outcomes=outs, line="2.5"))
+
+        if _ALT_CORNERS_TOTAL.match(raw_name):
+            for line in ("8.5", "9.5"):
+                outs = _altenar_pick_line(m, odds_by_id, line)
                 if outs:
-                    markets.append(
-                        MarketOdds(market_code="GOALS_OU_25", outcomes=outs, line="2.5")
-                    )
+                    code = _LINE_TO_CORNERS[line]
+                    markets.append(MarketOdds(market_code=code, outcomes=outs, line=line))
 
-        if "corner" in mname or "корнер" in mname or type_id == 166:
-            sv = str(m.get("sv") or mname)
-            outs = _altenar_ou_market(m, odds_by_id)
-            if not outs:
-                continue
-            if "8.5" in sv:
-                markets.append(
-                    MarketOdds(market_code="CORNERS_OU_85", outcomes=outs, line="8.5")
-                )
-            elif "9.5" in sv:
-                markets.append(
-                    MarketOdds(market_code="CORNERS_OU_95", outcomes=outs, line="9.5")
-                )
-
-    # Top-level odds scan for totals/corners lines
-    for o in data.get("odds", []):
-        name = str(o.get("name", "")).lower()
-        sv = str(o.get("sv") or "")
-        odd = _parse_odd(o.get("price"))
-        if not odd:
-            continue
-        # paired by typeId groups handled above; skip orphan singles
-        _ = (name, sv)
-
-    return markets
+    return _dedupe_markets(markets)
 
 
 def _altenar_main_odds(market: dict, odds_by_id: dict) -> list[OutcomeOdd]:
@@ -149,87 +172,104 @@ def _altenar_main_odds(market: dict, odds_by_id: dict) -> list[OutcomeOdd]:
     return outs
 
 
-def _altenar_ou_market(market: dict, odds_by_id: dict) -> list[OutcomeOdd]:
-    ids = [i for group in market.get("desktopOddIds", []) for i in group]
+def _altenar_pick_line(market: dict, odds_by_id: dict, line: str) -> list[OutcomeOdd]:
+    """Altenar packs many lines in one market — pick e.g. 'Над 2.5' / 'Под 2.5'."""
+    line_l = line.lower()
     over = under = None
-    for oid in ids:
+    for oid in [i for group in market.get("desktopOddIds", []) for i in group]:
         o = odds_by_id.get(oid)
         if not o:
             continue
-        name = str(o.get("name", "")).lower()
+        name = str(o.get("name", "")).strip().lower()
         odd = _parse_odd(o.get("price"))
         if not odd:
             continue
-        if "над" in name or "over" in name:
+        if name in (f"над {line_l}", f"over {line_l}"):
             over = OutcomeOdd(name="Over", odd=odd)
-        elif "под" in name or "under" in name:
+        elif name in (f"под {line_l}", f"under {line_l}"):
             under = OutcomeOdd(name="Under", odd=odd)
     if over and under:
         return [over, under]
     return []
 
 
+def _dedupe_markets(markets: list[MarketOdds]) -> list[MarketOdds]:
+    seen: set[str] = set()
+    out: list[MarketOdds] = []
+    for m in markets:
+        if m.market_code in seen:
+            continue
+        seen.add(m.market_code)
+        out.append(m)
+    return out
+
+
+def _iter_efbet_markets(event: dict[str, Any]):
+    seen: set[int] = set()
+    for m in event.get("markets", []) or []:
+        mid = m.get("id")
+        if mid is not None:
+            if mid in seen:
+                continue
+            seen.add(mid)
+        yield m
+    for tab in event.get("marketTabs", []) or []:
+        for grp in tab.get("marketGroups", []) or []:
+            for m in grp.get("markets", []) or []:
+                mid = m.get("id")
+                if mid is not None:
+                    if mid in seen:
+                        continue
+                    seen.add(mid)
+                yield m
+
+
+def _efbet_1x2(outs_raw: list[dict]) -> list[OutcomeOdd]:
+    if len(outs_raw) != 3:
+        return []
+    labels = ("1", "X", "2")
+    outs: list[OutcomeOdd] = []
+    for i, o in enumerate(outs_raw):
+        name = str(o.get("name", ""))
+        odd = _parse_odd(o.get("odds") or o.get("realOdds"))
+        if not odd:
+            return []
+        if name in ("1", "X", "2"):
+            outs.append(OutcomeOdd(name=name, odd=odd))
+        elif "равен" in name.lower():
+            outs.append(OutcomeOdd(name="X", odd=odd))
+        else:
+            outs.append(OutcomeOdd(name=labels[i], odd=odd))
+    return outs if len(outs) == 3 else []
+
+
 def extract_efbet_markets(event: dict[str, Any]) -> list[MarketOdds]:
     markets: list[MarketOdds] = []
-    for m in event.get("markets", []):
-        name = (m.get("name") or "").lower()
-        outs_raw = m.get("outcomes", [])
-        if "краен" in name:
-            outs = []
-            for i, o in enumerate(outs_raw[:3]):
-                label = str(o.get("name", ""))
-                odd = _parse_odd(o.get("odds") or o.get("realOdds"))
-                if not odd:
-                    continue
-                if label in ("1", "X", "2"):
-                    outs.append(OutcomeOdd(name=label, odd=odd))
-                elif "равен" in label.lower():
-                    outs.append(OutcomeOdd(name="X", odd=odd))
-                else:
-                    outs.append(OutcomeOdd(name=("1", "X", "2")[i], odd=odd))
-            if len(outs) == 3:
+    for m in _iter_efbet_markets(event):
+        mname = (m.get("name") or "").strip()
+        mname_l = mname.lower()
+        outs_raw = m.get("outcomes", []) or []
+
+        if mname_l == "краен резултат":
+            outs = _efbet_1x2(outs_raw)
+            if outs:
                 markets.append(MarketOdds(market_code="MATCH_1X2", outcomes=outs))
 
-        if "голове" in name or "goals" in name:
-            line = str(m.get("line") or name)
-            if "2.5" in line:
-                outs = []
-                for o in outs_raw:
-                    n = str(o.get("name", "")).lower()
-                    odd = _parse_odd(o.get("odds"))
-                    if not odd:
-                        continue
-                    if "над" in n:
-                        outs.append(OutcomeOdd(name="Over", odd=odd))
-                    elif "под" in n:
-                        outs.append(OutcomeOdd(name="Under", odd=odd))
-                if len(outs) == 2:
-                    markets.append(
-                        MarketOdds(market_code="GOALS_OU_25", outcomes=outs, line="2.5")
-                    )
+        if mname in _LINE_TO_GOALS:
+            outs = _extract_over_under(outs_raw)
+            if outs:
+                markets.append(
+                    MarketOdds(market_code=_LINE_TO_GOALS[mname], outcomes=outs, line=mname)
+                )
 
-        if "корнер" in name or "corner" in name:
-            line = str(m.get("line") or name)
-            outs = []
-            for o in outs_raw:
-                n = str(o.get("name", "")).lower()
-                odd = _parse_odd(o.get("odds"))
-                if not odd:
-                    continue
-                if "над" in n:
-                    outs.append(OutcomeOdd(name="Over", odd=odd))
-                elif "под" in n:
-                    outs.append(OutcomeOdd(name="Under", odd=odd))
-            if len(outs) == 2:
-                if "8.5" in line:
-                    markets.append(
-                        MarketOdds(market_code="CORNERS_OU_85", outcomes=outs, line="8.5")
-                    )
-                elif "9.5" in line:
-                    markets.append(
-                        MarketOdds(market_code="CORNERS_OU_95", outcomes=outs, line="9.5")
-                    )
-    return markets
+        if mname in _LINE_TO_CORNERS:
+            outs = _extract_over_under(outs_raw)
+            if outs:
+                markets.append(
+                    MarketOdds(market_code=_LINE_TO_CORNERS[mname], outcomes=outs, line=mname)
+                )
+
+    return _dedupe_markets(markets)
 
 
 def extract_sportinno_markets(event: dict[str, Any]) -> list[MarketOdds]:
@@ -273,19 +313,19 @@ def extract_sportinno_markets(event: dict[str, Any]) -> list[MarketOdds]:
                     markets.append(
                         MarketOdds(market_code="CORNERS_OU_95", outcomes=ou, line="9.5")
                     )
-    return markets
+    return _dedupe_markets(markets)
 
 
 def _sportinno_ou(selections: list[dict]) -> list[OutcomeOdd] | None:
     over = under = None
     for s in selections:
-        name = str(s.get("name", "")).lower()
+        name = str(s.get("name", "")).strip().lower()
         odd = _parse_odd(s.get("odds"))
         if not odd:
             continue
-        if "над" in name or "over" in name:
+        if name in _PLAIN_OU_OVER:
             over = OutcomeOdd(name="Over", odd=odd)
-        elif "под" in name or "under" in name:
+        elif name in _PLAIN_OU_UNDER:
             under = OutcomeOdd(name="Under", odd=odd)
     if over and under:
         return [over, under]

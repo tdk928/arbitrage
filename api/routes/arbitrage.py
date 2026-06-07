@@ -3,8 +3,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, sessionmaker
 
+from scraper.bet_board import build_arbitrage_response, build_match_board
 from scraper.db import get_engine, init_db
-from scraper.models import ArbitrageOpportunity, Match, ScrapeRun, Team
+from scraper.models import ScrapeRun
 from scraper.pipeline import run_pipeline
 from scraper.seed import seed_session
 from scraper.world_cup import run_world_cup_pipeline
@@ -42,6 +43,7 @@ def run_arbitrage(
     ),
     min_margin: float = Query(default=1.0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
+    budget: float = Query(default=100.0, ge=1, le=1_000_000),
     seed: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
@@ -54,6 +56,7 @@ def run_arbitrage(
             time_window=time_window,
             min_margin=min_margin,
             limit=limit,
+            budget_eur=budget,
             triggered_by="api",
         )
     except ValueError as exc:
@@ -64,10 +67,11 @@ def run_arbitrage(
 def run_world_cup(
     min_margin: float = Query(default=1.0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
+    budget: float = Query(default=100.0, ge=1, le=1_000_000),
     seed: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
-    """Scrape all World Cup 2026 fixtures from 6 bookmakers and compute arbitrage."""
+    """Scrape all World Cup 2026 fixtures from 6 bookmakers; return arbitrage bets only."""
     if seed:
         seed_session(db)
     try:
@@ -75,6 +79,7 @@ def run_world_cup(
             db,
             min_margin=min_margin,
             limit=limit,
+            budget_eur=budget,
             triggered_by="api",
         )
     except ValueError as exc:
@@ -84,34 +89,51 @@ def run_world_cup(
 @router.get("/opportunities")
 def get_opportunities(
     run_id: Optional[int] = Query(default=None),
+    min_margin: float = Query(default=1.0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
+    budget: float = Query(default=100.0, ge=1, le=1_000_000),
     db: Session = Depends(get_db),
 ):
+    """Arbitrage bets only from latest scrape (no re-scrape, no odds dump)."""
     if run_id is None:
         last_run = db.query(ScrapeRun).order_by(ScrapeRun.id.desc()).first()
         if not last_run:
-            return {"run_id": None, "opportunities": []}
-        run_id = last_run.id
-
-    opps = (
-        db.query(ArbitrageOpportunity)
-        .filter(ArbitrageOpportunity.scrape_run_id == run_id)
-        .order_by(ArbitrageOpportunity.margin_pct.desc())
-        .limit(limit)
-        .all()
-    )
-    results = []
-    for opp in opps:
-        match = db.get(Match, opp.match_id)
-        home = db.get(Team, match.home_team_id).name
-        away = db.get(Team, match.away_team_id).name
-        results.append(
-            {
-                "match": f"{home} vs {away}",
-                "kickoff_utc": match.kickoff_utc.isoformat(),
-                "market_type_id": opp.market_type_id,
-                "margin_pct": float(opp.margin_pct),
-                "legs": opp.legs,
+            return {
+                "run_id": None,
+                "budget_eur": budget,
+                "min_margin_pct": min_margin,
+                "count": 0,
+                "bets": [],
+                "message": "No scrape runs yet.",
             }
+        run_id = last_run.id
+        scraped_at = (last_run.finished_at or last_run.started_at).isoformat()
+    else:
+        last_run = db.get(ScrapeRun, run_id)
+        scraped_at = (
+            (last_run.finished_at or last_run.started_at).isoformat() if last_run else ""
         )
-    return {"run_id": run_id, "opportunities": results}
+
+    return build_arbitrage_response(
+        db,
+        run_id=run_id,
+        scraped_at=scraped_at,
+        budget_eur=budget,
+        min_margin_pct=min_margin,
+        limit=limit,
+    )
+
+
+@router.get("/board")
+def get_board(
+    run_id: Optional[int] = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Debug: raw odds grid per site (not arbitrage)."""
+    if run_id is None:
+        last_run = db.query(ScrapeRun).order_by(ScrapeRun.id.desc()).first()
+        if not last_run:
+            return {"run_id": None, "matches": []}
+        run_id = last_run.id
+    return {"run_id": run_id, "matches": build_match_board(db, run_id, limit=limit)}

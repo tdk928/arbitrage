@@ -70,6 +70,7 @@ def run_world_cup_pipeline(
     session: Session,
     min_margin: float = 1.0,
     limit: int = 10,
+    budget_eur: float = 100.0,
     triggered_by: str = "cli",
 ) -> dict[str, Any]:
     """
@@ -82,5 +83,6 @@ def run_world_cup_pipeline(
         time_window=WORLD_CUP_TIME_WINDOW,
         min_margin=min_margin,
         limit=limit,
+        budget_eur=budget_eur,
         triggered_by=triggered_by,
     )

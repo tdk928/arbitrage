@@ -4,10 +4,10 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from scraper.arbitrage import compute_arbitrage, rank_opportunities
+from scraper.bet_board import build_arbitrage_response
 from scraper.matcher import group_fixtures, pick_canonical
 from scraper.models import (
     ArbitrageOpportunity,
@@ -33,6 +33,7 @@ def run_pipeline(
     min_margin: float,
     limit: int,
     triggered_by: str = "cli",
+    budget_eur: float = 100.0,
 ) -> dict[str, Any]:
     competition = (
         session.query(Competition).filter(Competition.slug == competition_slug).one_or_none()
@@ -194,47 +195,13 @@ def run_pipeline(
     run.notes = "; ".join(errors[:20]) if errors else None
     session.commit()
 
-    bookmaker_coverage = _bookmaker_coverage(session, match_by_id)
-    total_opps = (
-        session.query(func.count(ArbitrageOpportunity.id))
-        .filter(ArbitrageOpportunity.scrape_run_id == run.id)
-        .scalar()
-    )
-
     return format_response(
         session,
         run,
-        ranked,
-        match_by_id,
-        market_types,
-        limit,
-        stats={
-            "fixtures_by_bookmaker": fixtures_by_bookmaker,
-            "matches_linked": len(match_by_id),
-            "odds_snapshots_by_bookmaker": dict(odds_by_bookmaker),
-            "odds_snapshots_total": sum(odds_by_bookmaker.values()),
-            "opportunities_total": total_opps,
-            "bookmaker_coverage": bookmaker_coverage,
-        },
+        limit=limit,
+        min_margin=min_margin,
+        budget_eur=budget_eur,
     )
-
-
-def _bookmaker_coverage(session: Session, match_by_id: dict[int, Match]) -> list[dict[str, Any]]:
-    """How many bookmakers each linked match has."""
-    coverage: list[dict[str, Any]] = []
-    for match in sorted(match_by_id.values(), key=lambda m: m.kickoff_utc):
-        home = session.get(Team, match.home_team_id).name
-        away = session.get(Team, match.away_team_id).name
-        bms = sorted((match.external_ids or {}).keys())
-        coverage.append(
-            {
-                "match": f"{home} vs {away}",
-                "kickoff_utc": match.kickoff_utc.isoformat(),
-                "bookmaker_count": len(bms),
-                "bookmakers": bms,
-            }
-        )
-    return coverage
 
 
 def _get_or_create_team(session: Session, name: str) -> Team:
@@ -251,46 +218,19 @@ def _get_or_create_team(session: Session, name: str) -> Team:
 def format_response(
     session: Session,
     run: ScrapeRun,
-    ranked: list,
-    match_by_id: dict[int, Match],
-    market_types: dict[str, MarketType],
     limit: int,
-    stats: dict[str, Any] | None = None,
+    min_margin: float,
+    budget_eur: float = 100.0,
 ) -> dict[str, Any]:
-    code_by_id = {m.id: m.code for m in market_types.values()}
-    opps_db = (
-        session.query(ArbitrageOpportunity)
-        .filter(ArbitrageOpportunity.scrape_run_id == run.id)
-        .order_by(ArbitrageOpportunity.margin_pct.desc())
-        .limit(limit)
-        .all()
+    result = build_arbitrage_response(
+        session,
+        run_id=run.id,
+        scraped_at=(run.finished_at or run.started_at).isoformat(),
+        budget_eur=budget_eur,
+        min_margin_pct=min_margin,
+        limit=limit,
     )
-    out_opps = []
-    for opp in opps_db:
-        match = session.get(Match, opp.match_id)
-        home = session.get(Team, match.home_team_id).name
-        away = session.get(Team, match.away_team_id).name
-        out_opps.append(
-            {
-                "match": f"{home} vs {away}",
-                "kickoff_utc": match.kickoff_utc.isoformat(),
-                "market": code_by_id.get(opp.market_type_id, ""),
-                "margin_pct": float(opp.margin_pct),
-                "implied_total": float(opp.implied_total),
-                "bookmaker_count": opp.bookmaker_count,
-                "legs": opp.legs,
-            }
-        )
-
-    result: dict[str, Any] = {
-        "run_id": run.id,
-        "scraped_at": (run.finished_at or run.started_at).isoformat(),
-        "time_window": run.time_window,
-        "competition": run.competition_slug,
-        "status": run.status,
-        "errors": run.notes,
-        "opportunities": out_opps,
-    }
-    if stats:
-        result["stats"] = stats
+    result["status"] = run.status
+    if run.notes:
+        result["errors"] = run.notes
     return result
