@@ -20,6 +20,7 @@ _ALT_GOALS_TOTAL = re.compile(r"^общ брой(?: голове)?$", re.I)
 _ALT_CORNERS_TOTAL = re.compile(r"^общ брой корнери$", re.I)
 _LINE_TO_GOALS = {"2.5": "GOALS_OU_25"}
 _LINE_TO_CORNERS = {"8.5": "CORNERS_OU_85", "9.5": "CORNERS_OU_95"}
+_EFBET_FT_1X2 = re.compile(r"^краен резултат$", re.I)
 
 
 def _parse_odd(value: Any) -> float | None:
@@ -224,23 +225,76 @@ def _iter_efbet_markets(event: dict[str, Any]):
                 yield m
 
 
+def _is_efbet_full_time_1x2_market(market: dict[str, Any]) -> bool:
+    """Only plain full-time 1X2 — not HT/FT, BTTS combos, or early-payout variants."""
+    name = (market.get("name") or "").strip()
+    original = (market.get("originalName") or name).strip()
+    return bool(_EFBET_FT_1X2.match(name) and _EFBET_FT_1X2.match(original))
+
+
+def _efbet_is_draw_outcome(outcome: dict[str, Any]) -> bool:
+    spec_type = outcome.get("specifiers", {}).get("type", [])
+    if isinstance(spec_type, list) and "draw" in spec_type:
+        return True
+    for field in ("name", "outcomeTemplateName", "originalName"):
+        text = str(outcome.get(field) or "").strip().lower()
+        if text in ("равен", "x", "draw", "равенство"):
+            return True
+    return False
+
+
+def _efbet_outcome_role(outcome: dict[str, Any]) -> str | None:
+    spec_type = outcome.get("specifiers", {}).get("type", [])
+    if isinstance(spec_type, list):
+        if "competitor1" in spec_type:
+            return "1"
+        if "draw" in spec_type:
+            return "X"
+        if "competitor2" in spec_type:
+            return "2"
+    for field in ("name", "outcomeTemplateName", "originalName"):
+        text = str(outcome.get(field) or "").strip().lower()
+        if text in ("1",):
+            return "1"
+        if text in ("x", "равен", "draw", "равенство"):
+            return "X"
+        if text in ("2",):
+            return "2"
+        if text in ("{$competitor1}",):
+            return "1"
+        if text in ("{$competitor2}",):
+            return "2"
+    return None
+
+
 def _efbet_1x2(outs_raw: list[dict]) -> list[OutcomeOdd]:
     if len(outs_raw) != 3:
         return []
-    labels = ("1", "X", "2")
-    outs: list[OutcomeOdd] = []
+    names = [str(o.get("name") or "").strip() for o in outs_raw]
+    if len(set(names)) == 1:
+        return []
+
+    draw_idx = next((i for i, o in enumerate(outs_raw) if _efbet_is_draw_outcome(o)), None)
+    by_role: dict[str, OutcomeOdd] = {}
     for i, o in enumerate(outs_raw):
-        name = str(o.get("name", ""))
         odd = _parse_odd(o.get("odds") or o.get("realOdds"))
         if not odd:
             return []
-        if name in ("1", "X", "2"):
-            outs.append(OutcomeOdd(name=name, odd=odd))
-        elif "равен" in name.lower():
-            outs.append(OutcomeOdd(name="X", odd=odd))
-        else:
-            outs.append(OutcomeOdd(name=labels[i], odd=odd))
-    return outs if len(outs) == 3 else []
+        role = _efbet_outcome_role(o)
+        if not role and draw_idx == 1:
+            if i == 0:
+                role = "1"
+            elif i == 2:
+                role = "2"
+        if not role:
+            return []
+        if role in by_role:
+            return []
+        by_role[role] = OutcomeOdd(name=role, odd=odd)
+
+    if set(by_role) != {"1", "X", "2"}:
+        return []
+    return [by_role["1"], by_role["X"], by_role["2"]]
 
 
 def extract_efbet_markets(event: dict[str, Any]) -> list[MarketOdds]:
@@ -250,7 +304,7 @@ def extract_efbet_markets(event: dict[str, Any]) -> list[MarketOdds]:
         mname_l = mname.lower()
         outs_raw = m.get("outcomes", []) or []
 
-        if mname_l == "краен резултат":
+        if _is_efbet_full_time_1x2_market(m):
             outs = _efbet_1x2(outs_raw)
             if outs:
                 markets.append(MarketOdds(market_code="MATCH_1X2", outcomes=outs))
