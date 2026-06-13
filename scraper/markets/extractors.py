@@ -21,6 +21,7 @@ _ALT_CORNERS_TOTAL = re.compile(r"^общ брой корнери$", re.I)
 _LINE_TO_GOALS = {"2.5": "GOALS_OU_25"}
 _LINE_TO_CORNERS = {"8.5": "CORNERS_OU_85", "9.5": "CORNERS_OU_95"}
 _EFBET_FT_1X2 = re.compile(r"^краен резултат$", re.I)
+_EFBET_NON_FT_SPEC_KEYS = frozenset({"hcp", "minutenr", "from", "to"})
 
 
 def _parse_odd(value: Any) -> float | None:
@@ -232,6 +233,11 @@ def _is_efbet_full_time_1x2_market(market: dict[str, Any]) -> bool:
     return bool(_EFBET_FT_1X2.match(name) and _EFBET_FT_1X2.match(original))
 
 
+def _efbet_outcome_has_non_ft_specifier(outcome: dict[str, Any]) -> bool:
+    spec = outcome.get("specifiers") or {}
+    return bool(_EFBET_NON_FT_SPEC_KEYS.intersection(spec))
+
+
 def _efbet_is_draw_outcome(outcome: dict[str, Any]) -> bool:
     spec_type = outcome.get("specifiers", {}).get("type", [])
     if isinstance(spec_type, list) and "draw" in spec_type:
@@ -272,6 +278,8 @@ def _efbet_1x2(outs_raw: list[dict]) -> list[OutcomeOdd]:
         return []
     names = [str(o.get("name") or "").strip() for o in outs_raw]
     if len(set(names)) == 1:
+        return []
+    if any(_efbet_outcome_has_non_ft_specifier(o) for o in outs_raw):
         return []
 
     draw_idx = next((i for i, o in enumerate(outs_raw) if _efbet_is_draw_outcome(o)), None)
