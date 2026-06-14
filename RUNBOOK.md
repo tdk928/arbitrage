@@ -230,8 +230,10 @@ Arbitrage requires odds from **≥ 2 bookmakers** and `margin_pct >= min_margin`
 
 ## 12. V2 all-markets pipeline (`world-cup-all` branch)
 
-Parallel pipeline: scrapes **all** markets from efbet, winbet, inbet, palmsbet (no bet365 yet).
+Parallel pipeline: scrapes **all** markets from efbet, winbet, inbet, palmsbet, and bet365 hub.
 Uses separate v2 tables — v1 is untouched.
+
+**Phase 3 (v2.1):** bet365 hub parser (1X2 from public hub) + fuzzy cross-language market name matching for long-tail markets.
 
 ### One-time v2 setup
 
@@ -276,7 +278,7 @@ Schema reference: `sql/002_v2_all_markets.sql`
 arbitrage/
 ├── api/                    # FastAPI v1 + v2 routes
 ├── scraper/
-│   ├── v2/                 # All-markets pipeline (phase 1: EGT/Altenar/efbet)
+│   ├── v2/                 # All-markets pipeline (EGT/Altenar/efbet/bet365)
 │   ├── run_world_cup_v2.py # V2 CLI entry
 │   └── ...
 ├── sql/

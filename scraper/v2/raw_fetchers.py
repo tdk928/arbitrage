@@ -4,9 +4,12 @@ from typing import Any
 
 import httpx
 
+from scraper.config import get_settings
 from scraper.platforms.altenar import ALTENAR_BASE
+from scraper.platforms.bet365 import HUB_URL
 from scraper.platforms.efbet import EFBET_API, EFBET_HEADERS
 from scraper.platforms.egt_digital import EGT_HEADERS
+from scraper.v2.bet365_html import extract_all_bet365_markets_from_html
 from scraper.v2.raw_extractors import extract_all_markets
 
 _EGT_HOSTS = {
@@ -17,6 +20,28 @@ _EGT_HOSTS = {
 _ALTENAR_INTEGRATIONS = {
     "palmsbet": "palmsbet.com",
 }
+
+# Per-run cache: bet365 hub HTML is large; fetch once per URL
+_HUB_HTML_CACHE: dict[str, str] = {}
+
+
+def clear_fetch_caches() -> None:
+    _HUB_HTML_CACHE.clear()
+
+
+def _fetch_bet365_hub_html(discovery_config: dict[str, Any]) -> str:
+    url = discovery_config.get("hub_url", HUB_URL)
+    if url in _HUB_HTML_CACHE:
+        return _HUB_HTML_CACHE[url]
+    settings = get_settings()
+    with httpx.Client(
+        headers={"User-Agent": settings.user_agent},
+        timeout=30,
+        follow_redirects=True,
+    ) as client:
+        html = client.get(url).text
+    _HUB_HTML_CACHE[url] = html
+    return html
 
 
 def fetch_raw_payload(
@@ -72,6 +97,10 @@ def fetch_raw_payload(
                             return {"details": details, "listing_event": ev}
             return {"details": details}
 
+    if platform == "bet365":
+        html = _fetch_bet365_hub_html(discovery_config)
+        return {"html": html, "external_id": external_id}
+
     return None
 
 
@@ -91,12 +120,17 @@ def fetch_all_markets_for_event(
         markets = extract_all_efbet_markets(payload.get("details") or {}, bookmaker_slug)
         listing = payload.get("listing_event")
         if listing:
-            from scraper.v2.raw_extractors import extract_all_efbet_markets as extract_efbet
-
             seen = {m.external_id for m in markets}
-            for m in extract_efbet(listing, bookmaker_slug):
+            for m in extract_all_efbet_markets(listing, bookmaker_slug):
                 if m.external_id not in seen:
                     markets.append(m)
         return markets
+
+    if platform == "bet365":
+        return extract_all_bet365_markets_from_html(
+            payload["html"],
+            external_id=str(payload.get("external_id") or external_id),
+            bookmaker_slug=bookmaker_slug,
+        )
 
     return extract_all_markets(platform, payload, bookmaker_slug)

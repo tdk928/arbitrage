@@ -43,7 +43,7 @@ class ParsedMarket:
         return " · ".join(parts)
 
 
-# Bookmakers supported in v2 phase 1 (EGT + Altenar + efbet; bet365 = phase 3)
-V2_BOOKMAKER_SLUGS = frozenset({"efbet", "winbet", "inbet", "palmsbet"})
+# Bookmakers supported in v2 (EGT + Altenar + efbet + bet365 hub)
+V2_BOOKMAKER_SLUGS = frozenset({"efbet", "winbet", "inbet", "palmsbet", "bet365"})
 
-V2_PLATFORMS = frozenset({"egt", "altenar", "efbet"})
+V2_PLATFORMS = frozenset({"egt", "altenar", "efbet", "bet365"})

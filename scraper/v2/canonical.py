@@ -57,14 +57,16 @@ def build_canonical_key(
     if line:
         parts.append(f"line_{line}")
     if family == "other" and market_name:
-        name_hash = hashlib.sha256(normalize_text(market_name).encode()).hexdigest()[:16]
-        parts.append(f"name_{name_hash}")
+        from scraper.v2.market_names import semantic_market_slug
+
+        slug = semantic_market_slug(market_name, line)
+        parts.append(f"sem_{slug}")
     parts.append("roles_" + "_".join(sorted(outcome_roles)))
     raw = "|".join(parts)
     return hashlib.sha256(raw.encode()).hexdigest()[:32]
 
 
-# Families eligible for cross-bookmaker arbitrage in v2 phase 1
+# Families eligible for cross-bookmaker arbitrage
 ARB_ELIGIBLE_FAMILIES = frozenset(
     {
         "match_1x2",
@@ -73,5 +75,18 @@ ARB_ELIGIBLE_FAMILIES = frozenset(
         "total",
         "handicap",
         "btts",
+        "double_chance",
+        "draw_no_bet",
     }
+)
+
+# Semantic slugs that may participate in arb when matched across bookmakers
+ARB_ELIGIBLE_SEMANTIC_PREFIXES = (
+    "total_goals_",
+    "total_corners_",
+    "match_result",
+    "btts",
+    "handicap_",
+    "double_chance",
+    "draw_no_bet",
 )

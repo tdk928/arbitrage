@@ -21,26 +21,81 @@ from scraper.platforms.registry import get_scraper
 from scraper.time_filter import filter_fixtures
 from scraper.types import RawFixture
 from scraper.v2.arbitrage import compute_arbitrage_v2, rank_opportunities_v2
-from scraper.v2.canonical import ARB_ELIGIBLE_FAMILIES, build_canonical_key
-from scraper.v2.raw_fetchers import fetch_all_markets_for_event
+from scraper.v2.canonical import (
+    ARB_ELIGIBLE_FAMILIES,
+    ARB_ELIGIBLE_SEMANTIC_PREFIXES,
+    build_canonical_key,
+)
+from scraper.v2.market_names import market_names_match, semantic_market_slug
+from scraper.v2.raw_fetchers import clear_fetch_caches, fetch_all_markets_for_event
 from scraper.v2.types import ParsedMarket, V2_BOOKMAKER_SLUGS
 
 
-def _get_or_create_team(session: Session, name: str) -> Team:
-    norm = normalize_team(name)
-    team = session.query(Team).filter(Team.name_normalized == norm).one_or_none()
-    if team:
-        return team
-    team = Team(name=name, name_normalized=norm)
-    session.add(team)
-    session.flush()
-    return team
+def _enrich_parsed_family(parsed: ParsedMarket) -> ParsedMarket:
+    """Reclassify 'other' markets when semantic slug maps to a known family."""
+    if parsed.family != "other":
+        return parsed
+
+    slug = semantic_market_slug(parsed.market_name, parsed.line)
+    if slug == "match_result":
+        parsed.family = "match_1x2"
+    elif slug.startswith("total_goals_"):
+        parsed.family = "total_goals"
+        parsed.line = slug.rsplit("_", 1)[-1]
+    elif slug.startswith("total_corners_"):
+        parsed.family = "total_corners"
+        parsed.line = slug.rsplit("_", 1)[-1]
+    elif slug.startswith("handicap_"):
+        parsed.family = "handicap"
+        parsed.line = slug.rsplit("_", 1)[-1]
+    elif slug == "btts":
+        parsed.family = "btts"
+    elif slug == "double_chance":
+        parsed.family = "double_chance"
+    elif slug == "draw_no_bet":
+        parsed.family = "draw_no_bet"
+    return parsed
+
+
+def _find_fuzzy_canonical(
+    session: Session,
+    parsed: ParsedMarket,
+) -> CanonicalMarketV2 | None:
+    """Cross-language fuzzy match for 'other' / long-tail markets."""
+    q = session.query(CanonicalMarketV2).filter(CanonicalMarketV2.period == parsed.period)
+    if parsed.line:
+        q = q.filter(CanonicalMarketV2.line == parsed.line)
+
+    for candidate in q.all():
+        if len(candidate.outcome_roles) != len(parsed.outcomes):
+            continue
+        if market_names_match(
+            parsed.market_name,
+            candidate.label,
+            parsed.line,
+            candidate.line,
+        ):
+            return candidate
+    return None
+
+
+def _is_arb_eligible(canonical: CanonicalMarketV2) -> bool:
+    if canonical.family in ARB_ELIGIBLE_FAMILIES:
+        return True
+    if canonical.family != "other":
+        return False
+    slug = semantic_market_slug(canonical.label, canonical.line)
+    return any(
+        slug == prefix.rstrip("_") or slug.startswith(prefix)
+        for prefix in ARB_ELIGIBLE_SEMANTIC_PREFIXES
+    )
 
 
 def _get_or_create_canonical(
     session: Session,
     parsed: ParsedMarket,
 ) -> CanonicalMarketV2 | None:
+    parsed = _enrich_parsed_family(parsed)
     if not parsed.mapped or len(parsed.outcomes) < 2:
         return None
 
@@ -59,6 +114,8 @@ def _get_or_create_canonical(
         .filter(CanonicalMarketV2.canonical_key == key)
         .one_or_none()
     )
+    if not canonical and parsed.family == "other":
+        canonical = _find_fuzzy_canonical(session, parsed)
     if not canonical:
         canonical = CanonicalMarketV2(
             canonical_key=key,
@@ -72,6 +129,17 @@ def _get_or_create_canonical(
         session.add(canonical)
         session.flush()
     return canonical
+
+
+def _get_or_create_team(session: Session, name: str) -> Team:
+    norm = normalize_team(name)
+    team = session.query(Team).filter(Team.name_normalized == norm).one_or_none()
+    if team:
+        return team
+    team = Team(name=name, name_normalized=norm)
+    session.add(team)
+    session.flush()
+    return team
 
 
 def run_pipeline_v2(
@@ -88,6 +156,8 @@ def run_pipeline_v2(
     )
     if not competition:
         raise ValueError(f"Competition not found: {competition_slug}")
+
+    clear_fetch_caches()
 
     run = ScrapeRunV2(
         competition_slug=competition_slug,
@@ -237,7 +307,7 @@ def run_pipeline_v2(
         if len(bm_odds) < 2:
             continue
         canonical = canonical_meta.get(canonical_id)
-        if not canonical or canonical.family not in ARB_ELIGIBLE_FAMILIES:
+        if not canonical or not _is_arb_eligible(canonical):
             continue
 
         # Require aligned outcome roles across all bookmakers present
@@ -283,7 +353,7 @@ def run_pipeline_v2(
         "raw_markets_by_bookmaker": dict(raw_count_by_bm),
         "mapped_markets_by_bookmaker": dict(mapped_count_by_bm),
         "cross_bookmaker_market_pairs": matched_pairs,
-        "pipeline_version": "v2",
+        "pipeline_version": "v2.1",
         "bookmakers": sorted(V2_BOOKMAKER_SLUGS),
     }
     run.status = "partial" if errors else "success"
@@ -352,7 +422,7 @@ def format_response_v2(
 
     return {
         "run_id": run.id,
-        "pipeline_version": "v2",
+        "pipeline_version": "v2.1",
         "scraped_at": (run.finished_at or run.started_at).isoformat(),
         "time_window": run.time_window,
         "competition": run.competition_slug,
