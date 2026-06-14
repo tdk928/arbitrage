@@ -228,13 +228,60 @@ Arbitrage requires odds from **≥ 2 bookmakers** and `margin_pct >= min_margin`
 
 ---
 
-## 11. Project layout
+## 12. V2 all-markets pipeline (`world-cup-all` branch)
+
+Parallel pipeline: scrapes **all** markets from efbet, winbet, inbet, palmsbet (no bet365 yet).
+Uses separate v2 tables — v1 is untouched.
+
+### One-time v2 setup
+
+```bash
+python -m scraper.db_init_v2
+```
+
+### Run v2 scrape (CLI)
+
+```bash
+python -m scraper.run_world_cup_v2 --min-margin 1 --limit 10
+```
+
+### Run v2 via API
+
+```bash
+curl -X POST "http://localhost:8000/arbitrage/v2/world-cup/run?min_margin=1&limit=10"
+
+curl "http://localhost:8000/arbitrage/v2/opportunities?limit=10"
+
+# Debug: raw vs canonical market mapping
+curl "http://localhost:8000/arbitrage/v2/markets?limit=50"
+```
+
+### V2 tables
+
+| Table | Purpose |
+|-------|---------|
+| `scrape_runs_v2` | Run metadata + stats |
+| `raw_markets_v2` | Every market as scraped |
+| `canonical_markets_v2` | Cross-bookmaker market identity |
+| `odds_snapshots_v2` | Canonical odds per bookmaker |
+| `arbitrage_opportunities_v2` | Generalized N-outcome arbs |
+
+Schema reference: `sql/002_v2_all_markets.sql`
+
+---
+
+## 13. Project layout
 
 ```
 arbitrage/
-├── api/              # FastAPI (POST /arbitrage/run)
-├── scraper/          # Scrapers, matcher, arbitrage engine
-├── sql/001_init.sql  # Schema reference
-├── RUNBOOK.md        # This file
-└── README.md         # Architecture overview
+├── api/                    # FastAPI v1 + v2 routes
+├── scraper/
+│   ├── v2/                 # All-markets pipeline (phase 1: EGT/Altenar/efbet)
+│   ├── run_world_cup_v2.py # V2 CLI entry
+│   └── ...
+├── sql/
+│   ├── 001_init.sql        # V1 schema
+│   └── 002_v2_all_markets.sql
+├── RUNBOOK.md
+└── README.md
 ```
