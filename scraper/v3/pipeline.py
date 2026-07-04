@@ -14,6 +14,7 @@ from scraper.platforms.registry import get_scraper
 from scraper.time_filter import filter_fixtures
 from scraper.types import RawFixture
 from scraper.v2.raw_fetchers import clear_fetch_caches, fetch_all_markets_for_event
+from scraper.v3.arbitrage import compute_opportunities_v3, persist_top10_and_audit
 from scraper.v3.criteria import criteria_match
 
 V3_BOOKMAKER_SLUGS = frozenset({"efbet", "winbet", "inbet", "palmsbet", "8888"})
@@ -96,6 +97,8 @@ def run_pipeline_v3(
     time_window: str,
     triggered_by: str = "cli",
     rule_slugs: list[str] | None = None,
+    min_margin: float = 1.0,
+    top_limit: int = 10,
 ) -> dict[str, Any]:
     clear_fetch_caches()
 
@@ -201,6 +204,9 @@ def run_pipeline_v3(
         session.add_all(batch)
         session.flush()
 
+    opportunities = compute_opportunities_v3(session, run.id, min_margin=min_margin)
+    top10 = persist_top10_and_audit(session, run.id, opportunities, limit=top_limit)
+
     run.stats = {
         "pipeline_version": "v3",
         "rules": [r.slug for r in rules],
@@ -209,6 +215,9 @@ def run_pipeline_v3(
         "odds_rows_by_rule": dict(odds_count_by_rule),
         "odds_rows_by_bookmaker": dict(odds_count_by_bm),
         "bookmakers": sorted(V3_BOOKMAKER_SLUGS),
+        "arbitrage_candidates": len(opportunities),
+        "arbitrage_top10": len(top10),
+        "min_margin_pct": min_margin,
     }
     run.status = "partial" if errors else "success"
     run.finished_at = datetime.now(tz=timezone.utc)
@@ -220,4 +229,16 @@ def run_pipeline_v3(
         "status": run.status,
         "stats": run.stats,
         "errors": run.notes,
+        "top10": [
+            {
+                "rank": i + 1,
+                "match": f"{o.home_team} vs {o.away_team}",
+                "market": o.market_label,
+                "line": o.line,
+                "margin_pct": o.margin_pct,
+                "bookmaker_count": o.bookmaker_count,
+                "legs": o.legs,
+            }
+            for i, o in enumerate(top10)
+        ],
     }

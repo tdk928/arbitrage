@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
         nargs="*",
         help="Rule slugs to scrape (default: all active rules)",
     )
+    parser.add_argument("--min-margin", type=float, default=1.0)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -30,7 +31,8 @@ def main(argv: list[str] | None = None) -> int:
         result = run_world_cup_pipeline_v3(
             session,
             triggered_by="cli",
-            rule_slugs=args.rules or None,
+            rule_slugs=args.rules or ["total_goals_ou"],
+            min_margin=args.min_margin,
         )
     finally:
         session.close()
@@ -42,6 +44,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"stats: {json.dumps(result['stats'], ensure_ascii=False)}")
         if result.get("errors"):
             print(f"errors: {result['errors'][:500]}")
+        print()
+        top10 = result.get("top10") or []
+        if not top10:
+            print(f"No arbitrage opportunities >= {args.min_margin}% margin.")
+        else:
+            print(f"Top {len(top10)} arbitrage (>= {args.min_margin}% margin):")
+            for row in top10:
+                legs = " | ".join(
+                    f"{leg['role']}@{leg['bookmaker']} {leg['odd']}" for leg in row["legs"]
+                )
+                print(
+                    f"  #{row['rank']} {row['margin_pct']:.2f}% — "
+                    f"{row['match']} — {row['market']} — {legs}"
+                )
     return 0 if result["status"] != "failed" else 1
 
 
