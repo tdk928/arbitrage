@@ -72,6 +72,7 @@ ARB_ELIGIBLE_FAMILIES = frozenset(
         "match_1x2",
         "total_goals",
         "total_corners",
+        "total_cards",
         "total",
         "handicap",
         "btts",
@@ -84,6 +85,7 @@ ARB_ELIGIBLE_FAMILIES = frozenset(
 ARB_ELIGIBLE_SEMANTIC_PREFIXES = (
     "total_goals_",
     "total_corners_",
+    "total_cards_",
     "match_result",
     "btts",
     "handicap_",

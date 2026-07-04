@@ -16,10 +16,11 @@ from scraper.v2.types import ParsedMarket, ParsedOutcome
 _EGT_CORNERS = re.compile(r"^total corners (8\.5|9\.5)$", re.I)
 _EGT_GOALS_25 = re.compile(r"^total goals 2\.5$", re.I)
 _EGT_LINE_IN_NAME = re.compile(
-    r"(?:total goals|total corners)\s+(\d+(?:\.\d+)?)", re.I
+    r"(?:total goals|total corners|total bookings)\s+(\d+(?:\.\d+)?)", re.I
 )
 _ALT_GOALS = re.compile(r"^общ брой(?: голове)?$", re.I)
 _ALT_CORNERS = re.compile(r"^общ брой корнери$", re.I)
+_ALT_CARDS = re.compile(r"^общ брой картони$", re.I)
 _ALT_DRAW = frozenset({"равенство", "x", "draw", "равен"})
 _OU_OVER = frozenset({"over", "над"})
 _OU_UNDER = frozenset({"under", "под"})
@@ -69,6 +70,11 @@ def _egt_family(template: str | None, name: str, market: dict) -> tuple[str, str
         line_match = _EGT_LINE_IN_NAME.search(n) or re.search(r"(\d+\.?\d*)", n)
         corner_line = line_match.group(1) if line_match else line
         return "total_corners", corner_line, "match"
+
+    if re.match(r"^total bookings \d+\.?\d*$", nl):
+        line_match = _EGT_LINE_IN_NAME.search(n) or re.search(r"(\d+\.?\d*)", n)
+        cards_line = line_match.group(1) if line_match else line
+        return "total_cards", cards_line, "match"
 
     if template == "total":
         if _EGT_GOALS_25.match(nl) or (line == "2.5" and "goal" in nl):
@@ -174,8 +180,12 @@ def _altenar_family(type_id: int | None, name: str) -> str:
         return "total_goals"
     if type_id == 166 or _ALT_CORNERS.match(name.strip()):
         return "total_corners"
+    if type_id == 139 or _ALT_CARDS.match(name.strip()):
+        return "total_cards"
     if _ALT_CORNERS.match(name.strip()) or "корнер" in nl:
         return "total_corners"
+    if _ALT_CARDS.match(name.strip()) or "картон" in nl:
+        return "total_cards"
     if type_id == 10 or "handicap" in nl or "хендикап" in nl:
         return "handicap"
     if type_id == 29 or ("двата отбора" in nl and "отбел" in nl):
@@ -265,6 +275,12 @@ def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> li
             continue
 
         if type_id == 166 and _ALT_CORNERS.match(raw_name):
+            markets.extend(
+                _pair_altenar_ou_markets(m, odds_by_id, bookmaker_slug, family, period, type_id)
+            )
+            continue
+
+        if type_id == 139 and _ALT_CARDS.match(raw_name):
             markets.extend(
                 _pair_altenar_ou_markets(m, odds_by_id, bookmaker_slug, family, period, type_id)
             )
@@ -450,6 +466,9 @@ def _efbet_family(name: str, outcomes: list[dict], original_name: str = "") -> t
     if "брой корнери" in orig and "полувреме" not in orig and " - " not in orig:
         if re.match(r"^\d+\.?\d*$", name.strip()):
             return "total_corners", name.strip()
+    if "брой картони" in orig and "полувреме" not in orig and " - " not in orig:
+        if re.match(r"^\d+\.?\d*$", name.strip()):
+            return "total_cards", name.strip()
     if n in ("краен резултат", "1x2"):
         return "match_1x2", None
     if re.match(r"^\d+\.?\d*$", n):
@@ -539,8 +558,14 @@ def extract_all_sportinno_markets(event: dict[str, Any], bookmaker_slug: str) ->
             if len(outs) < 2:
                 continue
             roles = {o.role for o in outs}
+            group_l = normalize_text(group_name)
             if roles == {"over", "under"}:
-                family = "total_goals"
+                if type_id in (134, 166) or "корнер" in group_l:
+                    family = "total_corners"
+                elif type_id == 169 or "картон" in group_l:
+                    family = "total_cards"
+                else:
+                    family = "total_goals"
             elif roles == {"yes", "no"}:
                 family = "btts"
                 line = None
