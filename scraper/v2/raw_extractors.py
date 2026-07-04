@@ -65,6 +65,11 @@ def _egt_family(template: str | None, name: str, market: dict) -> tuple[str, str
             return "match_1x2", None, "match"
         return "match_1x2_other", None, "match"
 
+    if re.match(r"^total corners \d+\.?\d*$", nl):
+        line_match = _EGT_LINE_IN_NAME.search(n) or re.search(r"(\d+\.?\d*)", n)
+        corner_line = line_match.group(1) if line_match else line
+        return "total_corners", corner_line, "match"
+
     if template == "total":
         if _EGT_GOALS_25.match(nl) or (line == "2.5" and "goal" in nl):
             return "total_goals", "2.5", "match"
@@ -167,6 +172,8 @@ def _altenar_family(type_id: int | None, name: str) -> str:
         return "match_1x2"
     if type_id == 18 or _ALT_GOALS.match(name.strip()):
         return "total_goals"
+    if type_id == 166 or _ALT_CORNERS.match(name.strip()):
+        return "total_corners"
     if _ALT_CORNERS.match(name.strip()) or "корнер" in nl:
         return "total_corners"
     if type_id == 10 or "handicap" in nl or "хендикап" in nl:
@@ -252,6 +259,12 @@ def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> li
         period = detect_period(raw_name)
 
         if type_id == 18 and _ALT_GOALS.match(raw_name):
+            markets.extend(
+                _pair_altenar_ou_markets(m, odds_by_id, bookmaker_slug, family, period, type_id)
+            )
+            continue
+
+        if type_id == 166 and _ALT_CORNERS.match(raw_name):
             markets.extend(
                 _pair_altenar_ou_markets(m, odds_by_id, bookmaker_slug, family, period, type_id)
             )
@@ -431,8 +444,12 @@ def _efbet_outcome_role(outcome: dict[str, Any]) -> str | None:
     return None
 
 
-def _efbet_family(name: str, outcomes: list[dict]) -> tuple[str, str | None]:
+def _efbet_family(name: str, outcomes: list[dict], original_name: str = "") -> tuple[str, str | None]:
     n = normalize_text(name)
+    orig = normalize_text(original_name)
+    if "брой корнери" in orig and "полувреме" not in orig and " - " not in orig:
+        if re.match(r"^\d+\.?\d*$", name.strip()):
+            return "total_corners", name.strip()
     if n in ("краен резултат", "1x2"):
         return "match_1x2", None
     if re.match(r"^\d+\.?\d*$", n):
@@ -475,13 +492,13 @@ def extract_all_efbet_markets(event: dict[str, Any], bookmaker_slug: str) -> lis
         if len(outs) < 2:
             continue
 
-        family, line = _efbet_family(raw_name, outs_raw)
-        period = detect_period(raw_name)
-
         specifiers = dict(m.get("specifiers") or {})
         original_name = (m.get("originalName") or "").strip()
         if original_name:
             specifiers["original_name"] = original_name
+
+        family, line = _efbet_family(raw_name, outs_raw, original_name)
+        period = detect_period(raw_name)
 
         markets.append(
             ParsedMarket(

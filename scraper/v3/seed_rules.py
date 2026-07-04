@@ -9,6 +9,7 @@ from scraper.models_v3 import MarketRuleSet, MarketRuleSiteMatch
 TOTAL_GOALS_OU_SLUG = "total_goals_ou"
 BOTH_TEAMS_TO_SCORE_SLUG = "both_teams_to_score"
 MATCH_RESULT_1X2_SLUG = "match_result_1x2"
+TOTAL_CORNERS_OU_SLUG = "total_corners_ou"
 
 _EGT_GOALS_CRITERIA = {
     "ui_section_contains": "Алт. Брой Голове",
@@ -197,6 +198,92 @@ MATCH_RESULT_SITE_ROWS: list[dict] = [
 ]
 
 
+_EGT_CORNERS_CRITERIA = {
+    "market_name_contains": "total corners",
+    "market_name_excludes_any": [
+        "half",
+        "1st",
+        "2nd",
+        " - ",
+        "handicap",
+        "range",
+        "race",
+        "odd/even",
+        "corner 1x2",
+        "1st corner",
+        "last corner",
+        "exact",
+    ],
+    "line_filter": "half_only",
+    "required_outcome_roles": ["over", "under"],
+}
+
+CORNERS_SITE_ROWS: list[dict] = [
+    {
+        "bookmaker_slug": "winbet",
+        "platform": "egt",
+        "ui_label": "Алт. Брой Корнери / Брой Корнери",
+        "match_criteria": _EGT_CORNERS_CRITERIA,
+        "notes": "EGT — match total corners O/U (.5 lines), alt + default sections",
+    },
+    {
+        "bookmaker_slug": "inbet",
+        "platform": "egt",
+        "ui_label": "Алт. Брой Корнери / Брой Корнери",
+        "match_criteria": _EGT_CORNERS_CRITERIA,
+        "notes": "Same EGT corners criteria as winbet",
+    },
+    {
+        "bookmaker_slug": "efbet",
+        "platform": "efbet",
+        "ui_label": "Брой корнери",
+        "match_criteria": {
+            "original_name_contains": "Брой корнери",
+            "original_name_excludes_any": [
+                "полувреме",
+                "1-во",
+                "2-ро",
+                "хендикап",
+                " - ",
+                "интервал",
+                "нечет",
+                "първи",
+                "последен",
+                "точен",
+            ],
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "efbet match corners O/U — .5 lines + default mainLine",
+    },
+    {
+        "bookmaker_slug": "palmsbet",
+        "platform": "altenar",
+        "ui_label": "Общ брой корнери",
+        "match_criteria": {
+            "type_id": 166,
+            "market_name": "Общ брой корнери",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "Altenar typeId 166 — match total corners",
+    },
+    {
+        "bookmaker_slug": "8888",
+        "platform": "sportinno",
+        "ui_label": "Брой Корнери",
+        "match_criteria": {
+            "type_id": 134,
+            "market_group_name": "Брой Корнери",
+            "market_name_excludes_any": ["полувреме", "1-во", "2-ро", "домакин", "гост"],
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "SportInno typeId 134 — full match corners (90 min)",
+    },
+]
+
+
 def _seed_rule_sites(session: Session, rule: MarketRuleSet, site_rows: list[dict]) -> None:
     for row in site_rows:
         existing = (
@@ -301,9 +388,38 @@ def seed_match_result_1x2(session: Session) -> MarketRuleSet:
     return rule
 
 
+def seed_total_corners_ou(session: Session) -> MarketRuleSet:
+    rule = (
+        session.query(MarketRuleSet)
+        .filter(MarketRuleSet.slug == TOTAL_CORNERS_OU_SLUG)
+        .one_or_none()
+    )
+    if not rule:
+        rule = MarketRuleSet(
+            slug=TOTAL_CORNERS_OU_SLUG,
+            label="Over/Under Total Corners (match)",
+            description=(
+                "Match total corners Over/Under. Lines must end in .5 only "
+                "(6.5, 7.5, 8.5 …). Includes default/main and alt lines."
+            ),
+            outcome_roles=["over", "under"],
+            scope="global",
+            line_filter="half_only",
+            is_active=True,
+        )
+        session.add(rule)
+        session.flush()
+
+    _seed_rule_sites(session, rule, CORNERS_SITE_ROWS)
+    session.flush()
+    session.refresh(rule)
+    return rule
+
+
 def seed_all_rules(session: Session) -> list[MarketRuleSet]:
     return [
         seed_total_goals_ou(session),
         seed_both_teams_to_score(session),
         seed_match_result_1x2(session),
+        seed_total_corners_ou(session),
     ]
