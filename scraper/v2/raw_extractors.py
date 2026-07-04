@@ -165,6 +165,8 @@ def _altenar_family(type_id: int | None, name: str) -> str:
         return "total_corners"
     if type_id == 10 or "handicap" in nl or "хендикап" in nl:
         return "handicap"
+    if type_id == 29 or ("двата отбора" in nl and "отбел" in nl):
+        return "btts"
     if type_id == 26 or "both teams" in nl or "и двата" in nl:
         return "btts"
     return f"altenar_{type_id}" if type_id else "other"
@@ -253,6 +255,39 @@ def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> li
         groups = m.get("desktopOddIds") or []
         if not groups:
             continue
+
+        # BTTS-style: one outcome per group (Да / Не in separate groups)
+        if all(len(g) == 1 for g in groups) and len(groups) >= 2:
+            merged: list[ParsedOutcome] = []
+            for group in groups:
+                oid = group[0]
+                o = odds_by_id.get(oid)
+                if not o:
+                    continue
+                label = str(o.get("name", ""))
+                odd = parse_odd(o.get("price"))
+                if not odd:
+                    continue
+                role = _altenar_outcome_role(label)
+                merged.append(ParsedOutcome(role=role, name=label, odd=odd))
+            merged_roles = {o.role for o in merged}
+            if merged_roles == {"yes", "no"} and family == "btts":
+                markets.append(
+                    ParsedMarket(
+                        external_id=f"{m.get('id')}",
+                        market_name=raw_name,
+                        platform="altenar",
+                        bookmaker_slug=bookmaker_slug,
+                        family=family,
+                        period=period,
+                        scope="match",
+                        line=None,
+                        outcomes=merged,
+                        provider_template=f"typeId:{type_id}",
+                        raw_payload=m,
+                    )
+                )
+                continue
 
         if family == "match_1x2" and len(groups) == 1:
             outs = []
@@ -384,7 +419,7 @@ def _efbet_family(name: str, outcomes: list[dict]) -> tuple[str, str | None]:
     if "голов" in n or "goal" in n:
         line_match = re.search(r"(\d+\.?\d*)", name)
         return "total_goals", line_match.group(1) if line_match else None
-    if "и двата" in n or "both teams" in n:
+    if "двата отбора" in n or "и двата" in n or "both teams" in n:
         return "btts", None
     if len(outcomes) == 2:
         roles = [_efbet_outcome_role(o) for o in outcomes]
@@ -459,13 +494,16 @@ def extract_all_sportinno_markets(event: dict[str, Any], bookmaker_slug: str) ->
                 if not odd:
                     continue
                 role = _altenar_outcome_role(label)
-                if role not in ("over", "under"):
-                    continue
                 outs.append(ParsedOutcome(role=role, name=label, odd=odd))
             if len(outs) < 2:
                 continue
             roles = {o.role for o in outs}
-            if roles != {"over", "under"}:
+            if roles == {"over", "under"}:
+                family = "total_goals"
+            elif roles == {"yes", "no"}:
+                family = "btts"
+                line = None
+            else:
                 continue
             markets.append(
                 ParsedMarket(
@@ -473,7 +511,7 @@ def extract_all_sportinno_markets(event: dict[str, Any], bookmaker_slug: str) ->
                     market_name=f"{group_name} {line}" if line else group_name,
                     platform="sportinno",
                     bookmaker_slug=bookmaker_slug,
-                    family="total_goals",
+                    family=family,
                     period=detect_period(group_name),
                     scope="match",
                     line=line,

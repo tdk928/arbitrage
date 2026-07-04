@@ -172,8 +172,10 @@ def run_pipeline_v3(
                     for parsed in parsed_markets:
                         if not criteria_match(sm.match_criteria, parsed):
                             continue
-                        if not parsed.line:
+                        needs_line = rule.line_filter == "half_only"
+                        if needs_line and not parsed.line:
                             continue
+                        line = str(parsed.line) if parsed.line else ""
                         outcomes_json = [
                             {"role": o.role, "name": o.name, "odd": o.odd}
                             for o in parsed.outcomes
@@ -184,7 +186,7 @@ def run_pipeline_v3(
                                 rule_set_id=rule.id,
                                 match_id=match.id,
                                 bookmaker_id=bm.id,
-                                line=str(parsed.line),
+                                line=line,
                                 market_name=parsed.market_name,
                                 external_event_id=str(ext_id),
                                 ui_label=sm.ui_label,

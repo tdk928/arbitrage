@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         result = run_world_cup_pipeline_v3(
             session,
             triggered_by="cli",
-            rule_slugs=args.rules or ["total_goals_ou"],
+            rule_slugs=args.rules or ["total_goals_ou", "both_teams_to_score"],
             min_margin=args.min_margin,
         )
     finally:

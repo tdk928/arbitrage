@@ -66,7 +66,7 @@ def compute_opportunities_v3(
                 "rule_set_id": rule.id,
                 "rule_slug": rule.slug,
                 "line": odds.line,
-                "market_label": f"{rule.label} {odds.line}",
+                "market_label": f"{rule.label} {odds.line}".strip() if odds.line else rule.label,
                 "home_team": home.name,
                 "away_team": away.name,
                 "kickoff_utc": match.kickoff_utc,

@@ -37,7 +37,10 @@ def criteria_match(criteria: dict[str, Any], market: ParsedMarket) -> bool:
     if exact := criteria.get("market_name"):
         name_l = market.market_name.strip().lower()
         exact_l = str(exact).strip().lower()
-        if name_l != exact_l and not name_l.startswith(exact_l + " "):
+        if criteria.get("market_name_exact"):
+            if name_l != exact_l:
+                return False
+        elif name_l != exact_l and not name_l.startswith(exact_l + " "):
             return False
 
     if contains := criteria.get("market_name_contains"):
@@ -54,6 +57,11 @@ def criteria_match(criteria: dict[str, Any], market: ParsedMarket) -> bool:
 
     if template := criteria.get("radar_template"):
         if (market.provider_template or "").lower() != str(template).lower():
+            return False
+
+    if templates := criteria.get("radar_template_any"):
+        pt = (market.provider_template or "").lower()
+        if pt not in {str(t).lower() for t in templates}:
             return False
 
     if type_id := criteria.get("type_id"):

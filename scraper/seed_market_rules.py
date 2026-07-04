@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Apply v3 market rules seed (Rule #1: total_goals_ou)."""
+"""Apply v3 market rules seed (total_goals_ou, both_teams_to_score)."""
 
 from sqlalchemy.orm import sessionmaker
 

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from scraper.models_v3 import MarketRuleSet, MarketRuleSiteMatch
 
 TOTAL_GOALS_OU_SLUG = "total_goals_ou"
+BOTH_TEAMS_TO_SCORE_SLUG = "both_teams_to_score"
 
 _EGT_GOALS_CRITERIA = {
     "ui_section_contains": "Алт. Брой Голове",
@@ -71,25 +72,67 @@ SITE_ROWS: list[dict] = [
 ]
 
 
-def seed_total_goals_ou(session: Session) -> MarketRuleSet:
-    rule = session.query(MarketRuleSet).filter(MarketRuleSet.slug == TOTAL_GOALS_OU_SLUG).one_or_none()
-    if not rule:
-        rule = MarketRuleSet(
-            slug=TOTAL_GOALS_OU_SLUG,
-            label="Over/Under Total Goals (match)",
-            description=(
-                "Match total goals Over/Under. Lines must end in .5 only "
-                "(0.5, 1.5, 2.5 …). Excludes .25/.75 and whole numbers 1, 2, 3."
-            ),
-            outcome_roles=["over", "under"],
-            scope="global",
-            line_filter="half_only",
-            is_active=True,
-        )
-        session.add(rule)
-        session.flush()
+_EGT_BTTS_CRITERIA = {
+    "radar_template_any": ["BothTeamsToScore", "BothTeamsToScoreMarket"],
+    "market_name_contains_any": ["двата отбора", "both teams"],
+    "market_name_excludes_any": ["полувреме", "half", "1st", "2nd", "corner", "корнер", "&"],
+    "required_outcome_roles": ["yes", "no"],
+}
 
-    for row in SITE_ROWS:
+BTTS_SITE_ROWS: list[dict] = [
+    {
+        "bookmaker_slug": "winbet",
+        "platform": "egt",
+        "ui_label": "Двата Отбора Да Отбележат",
+        "match_criteria": _EGT_BTTS_CRITERIA,
+        "notes": "EGT Digital — both teams to score (match)",
+    },
+    {
+        "bookmaker_slug": "inbet",
+        "platform": "egt",
+        "ui_label": "Двата Отбора Да Отбележат",
+        "match_criteria": _EGT_BTTS_CRITERIA,
+        "notes": "Same EGT BTTS criteria as winbet",
+    },
+    {
+        "bookmaker_slug": "efbet",
+        "platform": "efbet",
+        "ui_label": "Двата Отбора да Отбележат Гол",
+        "match_criteria": {
+            "market_name": "Двата Отбора да Отбележат Гол",
+            "market_name_exact": True,
+            "required_outcome_roles": ["yes", "no"],
+        },
+        "notes": "efbet BTTS — plain match market only (no combos/halves)",
+    },
+    {
+        "bookmaker_slug": "palmsbet",
+        "platform": "altenar",
+        "ui_label": "Двата отбора да отбележат",
+        "match_criteria": {
+            "type_id": 29,
+            "market_name": "Двата отбора да отбележат гол",
+            "market_name_exact": True,
+            "required_outcome_roles": ["yes", "no"],
+        },
+        "notes": "Altenar typeId 29 — both teams to score",
+    },
+    {
+        "bookmaker_slug": "8888",
+        "platform": "sportinno",
+        "ui_label": "Двата Отбора да Отбележат Гол",
+        "match_criteria": {
+            "type_id": 67,
+            "market_group_name": "Двата Отбора да Отбележат Гол",
+            "required_outcome_roles": ["yes", "no"],
+        },
+        "notes": "SportInno typeId 67 — full match BTTS (halves are typeId 119/120)",
+    },
+]
+
+
+def _seed_rule_sites(session: Session, rule: MarketRuleSet, site_rows: list[dict]) -> None:
+    for row in site_rows:
         existing = (
             session.query(MarketRuleSiteMatch)
             .filter(
@@ -116,10 +159,56 @@ def seed_total_goals_ou(session: Session) -> MarketRuleSet:
                     is_active=True,
                 )
             )
+
+
+def seed_total_goals_ou(session: Session) -> MarketRuleSet:
+    rule = session.query(MarketRuleSet).filter(MarketRuleSet.slug == TOTAL_GOALS_OU_SLUG).one_or_none()
+    if not rule:
+        rule = MarketRuleSet(
+            slug=TOTAL_GOALS_OU_SLUG,
+            label="Over/Under Total Goals (match)",
+            description=(
+                "Match total goals Over/Under. Lines must end in .5 only "
+                "(0.5, 1.5, 2.5 …). Excludes .25/.75 and whole numbers 1, 2, 3."
+            ),
+            outcome_roles=["over", "under"],
+            scope="global",
+            line_filter="half_only",
+            is_active=True,
+        )
+        session.add(rule)
+        session.flush()
+
+    _seed_rule_sites(session, rule, SITE_ROWS)
+    session.flush()
+    session.refresh(rule)
+    return rule
+
+
+def seed_both_teams_to_score(session: Session) -> MarketRuleSet:
+    rule = (
+        session.query(MarketRuleSet)
+        .filter(MarketRuleSet.slug == BOTH_TEAMS_TO_SCORE_SLUG)
+        .one_or_none()
+    )
+    if not rule:
+        rule = MarketRuleSet(
+            slug=BOTH_TEAMS_TO_SCORE_SLUG,
+            label="Both Teams To Score (match)",
+            description="Both teams to score Yes/No for the full match.",
+            outcome_roles=["yes", "no"],
+            scope="global",
+            line_filter="none",
+            is_active=True,
+        )
+        session.add(rule)
+        session.flush()
+
+    _seed_rule_sites(session, rule, BTTS_SITE_ROWS)
     session.flush()
     session.refresh(rule)
     return rule
 
 
 def seed_all_rules(session: Session) -> list[MarketRuleSet]:
-    return [seed_total_goals_ou(session)]
+    return [seed_total_goals_ou(session), seed_both_teams_to_score(session)]
