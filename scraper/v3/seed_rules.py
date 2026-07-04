@@ -8,6 +8,7 @@ from scraper.models_v3 import MarketRuleSet, MarketRuleSiteMatch
 
 TOTAL_GOALS_OU_SLUG = "total_goals_ou"
 BOTH_TEAMS_TO_SCORE_SLUG = "both_teams_to_score"
+MATCH_RESULT_1X2_SLUG = "match_result_1x2"
 
 _EGT_GOALS_CRITERIA = {
     "ui_section_contains": "Алт. Брой Голове",
@@ -131,6 +132,71 @@ BTTS_SITE_ROWS: list[dict] = [
 ]
 
 
+_EGT_1X2_CRITERIA = {
+    "radar_template": "3Way",
+    "market_name_contains_any": ["full time result", "краен резултат"],
+    "market_name_excludes_any": ["полувреме", "half", "1st", "2nd", "&", "enhanced"],
+    "required_outcome_roles": ["1", "X", "2"],
+}
+
+_INBET_1X2_CRITERIA = {
+    "radar_template": "3Way",
+    "market_name_contains": "enhanced odds",
+    "required_outcome_roles": ["1", "X", "2"],
+}
+
+MATCH_RESULT_SITE_ROWS: list[dict] = [
+    {
+        "bookmaker_slug": "winbet",
+        "platform": "egt",
+        "ui_label": "Краен Резултат",
+        "match_criteria": _EGT_1X2_CRITERIA,
+        "notes": "EGT Digital — full-time 1X2",
+    },
+    {
+        "bookmaker_slug": "inbet",
+        "platform": "egt",
+        "ui_label": "Краен Резултат 0% Марж",
+        "match_criteria": _INBET_1X2_CRITERIA,
+        "notes": "EGT Digital — 0% margin promo 1X2 (Enhanced Odds)",
+    },
+    {
+        "bookmaker_slug": "efbet",
+        "platform": "efbet",
+        "ui_label": "Краен Резултат",
+        "match_criteria": {
+            "market_name": "Краен Резултат",
+            "market_name_exact": True,
+            "required_outcome_roles": ["1", "X", "2"],
+        },
+        "notes": "efbet plain full-time 1X2 (excludes early payout / combos)",
+    },
+    {
+        "bookmaker_slug": "palmsbet",
+        "platform": "altenar",
+        "ui_label": "1x2",
+        "match_criteria": {
+            "type_id": 1,
+            "market_name": "1x2",
+            "market_name_exact": True,
+            "required_outcome_roles": ["1", "X", "2"],
+        },
+        "notes": "Altenar typeId 1 — full-time 1X2",
+    },
+    {
+        "bookmaker_slug": "8888",
+        "platform": "sportinno",
+        "ui_label": "Краен Резултат",
+        "match_criteria": {
+            "type_id": 10000023,
+            "market_group_name": "Краен Резултат",
+            "required_outcome_roles": ["1", "X", "2"],
+        },
+        "notes": "SportInno typeId 10000023 — plain 1X2 (not PAY/combo variant typeId 23)",
+    },
+]
+
+
 def _seed_rule_sites(session: Session, rule: MarketRuleSet, site_rows: list[dict]) -> None:
     for row in site_rows:
         existing = (
@@ -210,5 +276,34 @@ def seed_both_teams_to_score(session: Session) -> MarketRuleSet:
     return rule
 
 
+def seed_match_result_1x2(session: Session) -> MarketRuleSet:
+    rule = (
+        session.query(MarketRuleSet)
+        .filter(MarketRuleSet.slug == MATCH_RESULT_1X2_SLUG)
+        .one_or_none()
+    )
+    if not rule:
+        rule = MarketRuleSet(
+            slug=MATCH_RESULT_1X2_SLUG,
+            label="Match Result 1X2 (full time)",
+            description="Full-time match result: home win (1), draw (X), away win (2).",
+            outcome_roles=["1", "X", "2"],
+            scope="global",
+            line_filter="none",
+            is_active=True,
+        )
+        session.add(rule)
+        session.flush()
+
+    _seed_rule_sites(session, rule, MATCH_RESULT_SITE_ROWS)
+    session.flush()
+    session.refresh(rule)
+    return rule
+
+
 def seed_all_rules(session: Session) -> list[MarketRuleSet]:
-    return [seed_total_goals_ou(session), seed_both_teams_to_score(session)]
+    return [
+        seed_total_goals_ou(session),
+        seed_both_teams_to_score(session),
+        seed_match_result_1x2(session),
+    ]

@@ -22,7 +22,7 @@ def _type_id_matches(market: ParsedMarket, type_id: int) -> bool:
         return True
     if market.specifiers.get("type_id") == type_id:
         return True
-    return str(type_id) in template
+    return False
 
 
 def criteria_match(criteria: dict[str, Any], market: ParsedMarket) -> bool:

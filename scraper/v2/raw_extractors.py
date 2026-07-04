@@ -87,16 +87,22 @@ def _egt_family(template: str | None, name: str, market: dict) -> tuple[str, str
     return "other", line, "match"
 
 
+def _is_egt_full_time_1x2(name: str, template: str | None) -> bool:
+    return template == "3Way" and "full time result" in name.lower()
+
+
 def extract_all_egt_markets(data: dict[str, Any], bookmaker_slug: str) -> list[ParsedMarket]:
     markets: list[ParsedMarket] = []
     markets_data = data.get("marketsData") or {}
 
     for mid, m in markets_data.items():
         raw_name = str(m.get("name") or "")
-        if not raw_name or is_combo_market(raw_name) or is_promo_market(raw_name):
+        template = m.get("radarMarketTemplateName")
+        if not raw_name or is_combo_market(raw_name):
+            continue
+        if is_promo_market(raw_name) and not _is_egt_full_time_1x2(raw_name, template):
             continue
 
-        template = m.get("radarMarketTemplateName")
         outcomes_raw = m.get("outcomes") or []
         outs = _outcomes_from_egt(outcomes_raw)
         if len(outs) < 2:
@@ -272,6 +278,24 @@ def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> li
                 merged.append(ParsedOutcome(role=role, name=label, odd=odd))
             merged_roles = {o.role for o in merged}
             if merged_roles == {"yes", "no"} and family == "btts":
+                markets.append(
+                    ParsedMarket(
+                        external_id=f"{m.get('id')}",
+                        market_name=raw_name,
+                        platform="altenar",
+                        bookmaker_slug=bookmaker_slug,
+                        family=family,
+                        period=period,
+                        scope="match",
+                        line=None,
+                        outcomes=merged,
+                        provider_template=f"typeId:{type_id}",
+                        raw_payload=m,
+                    )
+                )
+                continue
+            if merged_roles == {"1", "X", "2"} and family == "match_1x2":
+                merged = sorted(merged, key=lambda o: ("1", "X", "2").index(o.role))
                 markets.append(
                     ParsedMarket(
                         external_id=f"{m.get('id')}",
@@ -503,6 +527,10 @@ def extract_all_sportinno_markets(event: dict[str, Any], bookmaker_slug: str) ->
             elif roles == {"yes", "no"}:
                 family = "btts"
                 line = None
+            elif roles == {"1", "X", "2"}:
+                family = "match_1x2"
+                line = None
+                outs = sorted(outs, key=lambda o: ("1", "X", "2").index(o.role))
             else:
                 continue
             markets.append(
