@@ -15,6 +15,9 @@ from scraper.v2.types import ParsedMarket, ParsedOutcome
 
 _EGT_CORNERS = re.compile(r"^total corners (8\.5|9\.5)$", re.I)
 _EGT_GOALS_25 = re.compile(r"^total goals 2\.5$", re.I)
+_EGT_LINE_IN_NAME = re.compile(
+    r"(?:total goals|total corners)\s+(\d+(?:\.\d+)?)", re.I
+)
 _ALT_GOALS = re.compile(r"^общ брой(?: голове)?$", re.I)
 _ALT_CORNERS = re.compile(r"^общ брой корнери$", re.I)
 _ALT_DRAW = frozenset({"равенство", "x", "draw", "равен"})
@@ -52,6 +55,10 @@ def _egt_family(template: str | None, name: str, market: dict) -> tuple[str, str
     nl = n.lower()
     period = detect_period(n)
     line = str(market.get("specialOddsValue") or market.get("line") or "").strip() or None
+    if not line:
+        line_match = _EGT_LINE_IN_NAME.search(n)
+        if line_match:
+            line = line_match.group(1)
 
     if template == "3Way":
         if "full time result" in nl or "краен" in nl:
@@ -163,6 +170,66 @@ def _altenar_family(type_id: int | None, name: str) -> str:
     return f"altenar_{type_id}" if type_id else "other"
 
 
+def _pair_altenar_ou_markets(
+    m: dict[str, Any],
+    odds_by_id: dict[int, dict],
+    bookmaker_slug: str,
+    family: str,
+    period: str,
+    type_id: int | None,
+) -> list[ParsedMarket]:
+    """Pair Over/Under selections by line (Altenar splits them into separate groups)."""
+    by_line: dict[str, dict[str, ParsedOutcome]] = {}
+    for group in m.get("desktopOddIds") or []:
+        for oid in group:
+            o = odds_by_id.get(oid)
+            if not o:
+                continue
+            label = str(o.get("name", ""))
+            odd = parse_odd(o.get("price"))
+            if not odd:
+                continue
+            line = _altenar_line_from_outcome(label)
+            role = _altenar_outcome_role(label)
+            if not line or role not in ("over", "under"):
+                continue
+            by_line.setdefault(line, {})[role] = ParsedOutcome(role=role, name=label, odd=odd)
+
+    raw_name = (m.get("name") or "").strip()
+    markets: list[ParsedMarket] = []
+    for line, roles in by_line.items():
+        if "over" not in roles or "under" not in roles:
+            continue
+        markets.append(
+            ParsedMarket(
+                external_id=f"{m.get('id')}:{line}",
+                market_name=f"{raw_name} {line}",
+                platform="altenar",
+                bookmaker_slug=bookmaker_slug,
+                family=family,
+                period=period,
+                scope="match",
+                line=line,
+                outcomes=[roles["over"], roles["under"]],
+                provider_template=f"typeId:{type_id}",
+                specifiers={"type_id": type_id},
+                raw_payload=m,
+            )
+        )
+    return markets
+
+
+def _dedupe_parsed(markets: list[ParsedMarket]) -> list[ParsedMarket]:
+    seen: set[str] = set()
+    out: list[ParsedMarket] = []
+    for m in markets:
+        if m.external_id in seen:
+            continue
+        seen.add(m.external_id)
+        out.append(m)
+    return out
+
+
 def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> list[ParsedMarket]:
     markets: list[ParsedMarket] = []
     odds_by_id = {o["id"]: o for o in data.get("odds", [])}
@@ -175,6 +242,12 @@ def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> li
         type_id = m.get("typeId")
         family = _altenar_family(type_id, raw_name)
         period = detect_period(raw_name)
+
+        if type_id == 18 and _ALT_GOALS.match(raw_name):
+            markets.extend(
+                _pair_altenar_ou_markets(m, odds_by_id, bookmaker_slug, family, period, type_id)
+            )
+            continue
 
         # Altenar packs multiple lines in desktopOddIds groups
         groups = m.get("desktopOddIds") or []
@@ -268,7 +341,7 @@ def extract_all_altenar_markets(data: dict[str, Any], bookmaker_slug: str) -> li
                     )
                 )
 
-    return markets
+    return _dedupe_parsed(markets)
 
 
 def _efbet_outcome_role(outcome: dict[str, Any]) -> str | None:
@@ -346,6 +419,11 @@ def extract_all_efbet_markets(event: dict[str, Any], bookmaker_slug: str) -> lis
         family, line = _efbet_family(raw_name, outs_raw)
         period = detect_period(raw_name)
 
+        specifiers = dict(m.get("specifiers") or {})
+        original_name = (m.get("originalName") or "").strip()
+        if original_name:
+            specifiers["original_name"] = original_name
+
         markets.append(
             ParsedMarket(
                 external_id=str(m.get("id") or raw_name),
@@ -355,14 +433,56 @@ def extract_all_efbet_markets(event: dict[str, Any], bookmaker_slug: str) -> lis
                 family=family,
                 period=period,
                 scope="match",
-                line=line,
+                line=line or raw_name if re.match(r"^\d+\.?\d*$", raw_name) else line,
                 outcomes=outs,
                 provider_template=str(m.get("marketTypeId") or m.get("typeId") or ""),
-                specifiers=dict(m.get("specifiers") or {}),
+                specifiers=specifiers,
                 raw_payload=m,
             )
         )
 
+    return markets
+
+
+def extract_all_sportinno_markets(event: dict[str, Any], bookmaker_slug: str) -> list[ParsedMarket]:
+    markets: list[ParsedMarket] = []
+    for mt in event.get("marketTypes", []) or []:
+        group_name = str(mt.get("name") or "").strip()
+        type_id = mt.get("id")
+        for m in mt.get("markets", []) or []:
+            line = str(m.get("line") or "").strip() or None
+            selections = m.get("selections") or []
+            outs: list[ParsedOutcome] = []
+            for s in selections:
+                label = str(s.get("name", "")).strip()
+                odd = parse_odd(s.get("odds"))
+                if not odd:
+                    continue
+                role = _altenar_outcome_role(label)
+                if role not in ("over", "under"):
+                    continue
+                outs.append(ParsedOutcome(role=role, name=label, odd=odd))
+            if len(outs) < 2:
+                continue
+            roles = {o.role for o in outs}
+            if roles != {"over", "under"}:
+                continue
+            markets.append(
+                ParsedMarket(
+                    external_id=f"{type_id}:{line or m.get('id')}",
+                    market_name=f"{group_name} {line}" if line else group_name,
+                    platform="sportinno",
+                    bookmaker_slug=bookmaker_slug,
+                    family="total_goals",
+                    period=detect_period(group_name),
+                    scope="match",
+                    line=line,
+                    outcomes=outs,
+                    provider_template=f"typeId:{type_id}",
+                    specifiers={"group_name": group_name, "type_id": type_id},
+                    raw_payload=m,
+                )
+            )
     return markets
 
 
@@ -377,4 +497,9 @@ def extract_all_markets(
         return extract_all_altenar_markets(payload, bookmaker_slug)
     if platform == "efbet":
         return extract_all_efbet_markets(payload, bookmaker_slug)
+    if platform == "sportinno":
+        event = payload
+        if "marketTypes" not in event and "sportEvent" in event:
+            event = event["sportEvent"]
+        return extract_all_sportinno_markets(event, bookmaker_slug)
     return []

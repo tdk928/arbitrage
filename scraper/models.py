@@ -3,34 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import (
-    Boolean,
-    DateTime,
-    ForeignKey,
-    Integer,
-    Numeric,
-    SmallInteger,
-    String,
-    Text,
-    UniqueConstraint,
-    func,
-)
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
     pass
-
-
-class MarketType(Base):
-    __tablename__ = "market_types"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    name: Mapped[str] = mapped_column(String(128), nullable=False)
-    outcome_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    line: Mapped[Optional[str]] = mapped_column(String(16))
 
 
 class Bookmaker(Base):
@@ -93,44 +72,3 @@ class Match(Base):
 
     home_team: Mapped["Team"] = relationship(foreign_keys=[home_team_id])
     away_team: Mapped["Team"] = relationship(foreign_keys=[away_team_id])
-
-
-class ScrapeRun(Base):
-    __tablename__ = "scrape_runs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    competition_slug: Mapped[str] = mapped_column(String(64), nullable=False)
-    time_window: Mapped[str] = mapped_column(String(32), nullable=False)
-    status: Mapped[str] = mapped_column(String(16), default="running")
-    triggered_by: Mapped[str] = mapped_column(String(16), default="cli")
-    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    notes: Mapped[Optional[str]] = mapped_column(Text)
-
-
-class OddsSnapshot(Base):
-    __tablename__ = "odds_snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    scrape_run_id: Mapped[int] = mapped_column(ForeignKey("scrape_runs.id"), nullable=False)
-    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), nullable=False)
-    bookmaker_id: Mapped[int] = mapped_column(ForeignKey("bookmakers.id"), nullable=False)
-    market_type_id: Mapped[int] = mapped_column(ForeignKey("market_types.id"), nullable=False)
-    outcomes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
-    scraped_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    success: Mapped[bool] = mapped_column(Boolean, default=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text)
-
-
-class ArbitrageOpportunity(Base):
-    __tablename__ = "arbitrage_opportunities"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    scrape_run_id: Mapped[int] = mapped_column(ForeignKey("scrape_runs.id"), nullable=False)
-    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id"), nullable=False)
-    market_type_id: Mapped[int] = mapped_column(ForeignKey("market_types.id"), nullable=False)
-    margin_pct: Mapped[float] = mapped_column(Numeric(8, 4), nullable=False)
-    implied_total: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False)
-    legs: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
-    bookmaker_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

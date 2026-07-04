@@ -57,16 +57,16 @@ def _enrich_parsed_family(parsed: ParsedMarket) -> ParsedMarket:
     return parsed
 
 
-def _find_fuzzy_canonical(
-    session: Session,
+def _find_fuzzy_canonical_in_cache(
     parsed: ParsedMarket,
+    cache: dict[str, CanonicalMarketV2],
 ) -> CanonicalMarketV2 | None:
-    """Cross-language fuzzy match for 'other' / long-tail markets."""
-    q = session.query(CanonicalMarketV2).filter(CanonicalMarketV2.period == parsed.period)
-    if parsed.line:
-        q = q.filter(CanonicalMarketV2.line == parsed.line)
-
-    for candidate in q.all():
+    """Cross-language fuzzy match against in-memory canonical cache only."""
+    for candidate in cache.values():
+        if candidate.period != parsed.period:
+            continue
+        if parsed.line and candidate.line and parsed.line != candidate.line:
+            continue
         if len(candidate.outcome_roles) != len(parsed.outcomes):
             continue
         if market_names_match(
@@ -79,21 +79,11 @@ def _find_fuzzy_canonical(
     return None
 
 
-def _is_arb_eligible(canonical: CanonicalMarketV2) -> bool:
-    if canonical.family in ARB_ELIGIBLE_FAMILIES:
-        return True
-    if canonical.family != "other":
-        return False
-    slug = semantic_market_slug(canonical.label, canonical.line)
-    return any(
-        slug == prefix.rstrip("_") or slug.startswith(prefix)
-        for prefix in ARB_ELIGIBLE_SEMANTIC_PREFIXES
-    )
-
-
 def _get_or_create_canonical(
     session: Session,
     parsed: ParsedMarket,
+    cache: dict[str, CanonicalMarketV2],
+    pending_flush: list[CanonicalMarketV2],
 ) -> CanonicalMarketV2 | None:
     parsed = _enrich_parsed_family(parsed)
     if not parsed.mapped or len(parsed.outcomes) < 2:
@@ -109,13 +99,7 @@ def _get_or_create_canonical(
         market_name=parsed.market_name,
     )
 
-    canonical = (
-        session.query(CanonicalMarketV2)
-        .filter(CanonicalMarketV2.canonical_key == key)
-        .one_or_none()
-    )
-    if not canonical and parsed.family == "other":
-        canonical = _find_fuzzy_canonical(session, parsed)
+    canonical = cache.get(key)
     if not canonical:
         canonical = CanonicalMarketV2(
             canonical_key=key,
@@ -127,8 +111,27 @@ def _get_or_create_canonical(
             label=parsed.label,
         )
         session.add(canonical)
-        session.flush()
+        pending_flush.append(canonical)
+        if len(pending_flush) >= 200:
+            session.flush()
+            for c in pending_flush:
+                cache[c.canonical_key] = c
+            pending_flush.clear()
+
+    cache[key] = canonical
     return canonical
+
+
+def _is_arb_eligible(canonical: CanonicalMarketV2) -> bool:
+    if canonical.family in ARB_ELIGIBLE_FAMILIES:
+        return True
+    if canonical.family != "other":
+        return False
+    slug = semantic_market_slug(canonical.label, canonical.line)
+    return any(
+        slug == prefix.rstrip("_") or slug.startswith(prefix)
+        for prefix in ARB_ELIGIBLE_SEMANTIC_PREFIXES
+    )
 
 
 def _get_or_create_team(session: Session, name: str) -> Team:
@@ -239,6 +242,11 @@ def run_pipeline_v2(
     odds_by_match_canonical: dict[tuple[int, int], dict[str, list]] = defaultdict(dict)
     canonical_meta: dict[int, CanonicalMarketV2] = {}
     snapshot_buffer: dict[tuple[int, int, int], list] = {}
+    canonical_cache: dict[str, CanonicalMarketV2] = {
+        c.canonical_key: c for c in session.query(CanonicalMarketV2).all()
+    }
+    pending_canonical_flush: list[CanonicalMarketV2] = []
+    raw_batch: list[RawMarketV2] = []
 
     for src in sources:
         bm = session.get(Bookmaker, src.bookmaker_id)
@@ -258,12 +266,17 @@ def run_pipeline_v2(
                 )
                 for parsed in parsed_markets:
                     raw_count_by_bm[bm.slug] += 1
-                    canonical = _get_or_create_canonical(session, parsed)
+                    canonical = _get_or_create_canonical(
+                        session, parsed, canonical_cache, pending_canonical_flush
+                    )
+                    if canonical and canonical.id is None:
+                        session.flush()
+                        pending_canonical_flush.clear()
                     outcomes_json = [
                         {"role": o.role, "name": o.name, "odd": o.odd}
                         for o in parsed.outcomes
                     ]
-                    session.add(
+                    raw_batch.append(
                         RawMarketV2(
                             scrape_run_id=run.id,
                             match_id=match.id,
@@ -274,10 +287,14 @@ def run_pipeline_v2(
                             provider_template=parsed.provider_template,
                             specifiers=parsed.specifiers,
                             outcomes=outcomes_json,
-                            raw_payload=parsed.raw_payload,
+                            raw_payload=None,
                             mapped=canonical is not None,
                         )
                     )
+                    if len(raw_batch) >= 500:
+                        session.add_all(raw_batch)
+                        session.flush()
+                        raw_batch.clear()
                     if not canonical:
                         continue
                     mapped_count_by_bm[bm.slug] += 1
@@ -289,6 +306,12 @@ def run_pipeline_v2(
 
             except Exception as exc:
                 errors.append(f"{bm.slug} markets match {match.id}: {exc}")
+
+    if pending_canonical_flush:
+        session.flush()
+    if raw_batch:
+        session.add_all(raw_batch)
+        session.flush()
 
     for (match_id, bookmaker_id, canonical_id), outcomes_json in snapshot_buffer.items():
         session.add(

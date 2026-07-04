@@ -101,6 +101,26 @@ def fetch_raw_payload(
         html = _fetch_bet365_hub_html(discovery_config)
         return {"html": html, "external_id": external_id}
 
+    if platform == "sportinno":
+        from scraper.platforms.registry import get_scraper
+
+        scraper = get_scraper(bookmaker_slug)
+        bid = discovery_config.get("bid", "1294778290")
+        url = f"https://cdn-bg-api.sportinno.net/api/v2/widgets/events/{external_id}"
+        data = None
+        for attempt in range(2):
+            data = scraper._get_json(url, {"bid": bid})
+            if data and len(data.get("marketTypes") or []) > 10:
+                scraper._event_cache[str(external_id)] = data
+                return data
+            scraper._token = None
+        cached = scraper._event_cache.get(str(external_id))
+        if cached and cached.get("marketTypes"):
+            return cached
+        if not data:
+            return None
+        return data if "marketTypes" in data else data.get("sportEvent", data)
+
     return None
 
 

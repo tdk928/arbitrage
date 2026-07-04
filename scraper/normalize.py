@@ -27,6 +27,7 @@ ALIASES: dict[str, str] = {
     "чехия": "czechia",
     "южна корея": "south korea",
     "канада": "canada",
+    "мароко": "morocco",
     "чили": "chile",
     "еквадор": "ecuador",
     "япония": "japan",
