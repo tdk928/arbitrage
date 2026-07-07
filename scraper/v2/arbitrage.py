@@ -11,6 +11,11 @@ def roi_pct_from_implied(implied_sum: float) -> float:
     return (1.0 / implied_sum - 1.0) * 100.0
 
 
+def display_odd(odd: float) -> float:
+    """Round to 2 decimals to match bookmaker UI odds used in ROI math."""
+    return round(float(odd), 2)
+
+
 @dataclass
 class OpportunityV2:
     canonical_market_id: int
@@ -52,13 +57,14 @@ def compute_arbitrage_v2(
                         best_name = o.get("name", role)
         if not best_bm or best_odd <= 1.0:
             return None
-        implied_sum += 1.0 / best_odd
+        calc_odd = display_odd(best_odd)
+        implied_sum += 1.0 / calc_odd
         bookmakers_used.add(best_bm)
         best_legs.append(
             {
                 "role": role,
                 "outcome": best_name,
-                "odd": round(best_odd, 4),
+                "odd": calc_odd,
                 "bookmaker": best_bm,
             }
         )

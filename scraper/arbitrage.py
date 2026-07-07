@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from scraper.v2.arbitrage import roi_pct_from_implied
+from scraper.v2.arbitrage import display_odd, roi_pct_from_implied
 
 MARKET_OUTCOME_MAP: dict[str, list[str]] = {
     "MATCH_1X2": ["1", "X", "2"],
@@ -50,12 +50,13 @@ def compute_arbitrage(
                         best_bm = bm_slug
         if not best_bm or best_odd <= 1.0:
             return None
-        implied_sum += 1.0 / best_odd
+        calc_odd = display_odd(best_odd)
+        implied_sum += 1.0 / calc_odd
         bookmakers_used.add(best_bm)
         best_legs.append(
             {
                 "outcome": outcome_name,
-                "odd": round(best_odd, 4),
+                "odd": calc_odd,
                 "bookmaker": best_bm,
             }
         )
