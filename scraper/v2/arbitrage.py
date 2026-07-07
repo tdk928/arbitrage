@@ -3,51 +3,58 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from scraper.v2.arbitrage import display_odd, roi_pct_from_implied
 
-MARKET_OUTCOME_MAP: dict[str, list[str]] = {
-    "MATCH_1X2": ["1", "X", "2"],
-    "GOALS_OU_25": ["Over", "Under"],
-    "CORNERS_OU_85": ["Over", "Under"],
-    "CORNERS_OU_95": ["Over", "Under"],
-}
+def roi_pct_from_implied(implied_sum: float) -> float:
+    """ROI on total stake when splitting optimally across arb legs."""
+    if implied_sum <= 0:
+        return 0.0
+    return (1.0 / implied_sum - 1.0) * 100.0
+
+
+def display_odd(odd: float) -> float:
+    """Round to 2 decimals to match bookmaker UI odds used in ROI math."""
+    return round(float(odd), 2)
 
 
 @dataclass
-class OpportunityResult:
-    market_code: str
+class OpportunityV2:
+    canonical_market_id: int
+    market_label: str
+    family: str
     margin_pct: float
     implied_total: float
     legs: list[dict[str, Any]]
     bookmaker_count: int
 
 
-def compute_arbitrage(
-    market_code: str,
+def compute_arbitrage_v2(
+    outcome_roles: list[str],
     bookmaker_odds: dict[str, list[dict[str, Any]]],
     min_margin: float = 1.0,
-) -> OpportunityResult | None:
+) -> OpportunityV2 | None:
     """
-    bookmaker_odds: {bookmaker_slug: [{"name": "1", "odd": 1.44}, ...]}
+    bookmaker_odds: {bookmaker_slug: [{"role": "over", "name": "...", "odd": 1.9}, ...]}
+    margin_pct field stores ROI%: (1/implied_sum - 1) * 100.
     """
-    expected = MARKET_OUTCOME_MAP.get(market_code)
-    if not expected:
+    if len(outcome_roles) < 2:
         return None
 
     best_legs: list[dict[str, Any]] = []
     implied_sum = 0.0
     bookmakers_used: set[str] = set()
 
-    for outcome_name in expected:
+    for role in outcome_roles:
         best_odd = 0.0
         best_bm = None
+        best_name = role
         for bm_slug, outcomes in bookmaker_odds.items():
             for o in outcomes:
-                if o.get("name") == outcome_name:
+                if o.get("role") == role:
                     odd = float(o["odd"])
                     if odd > best_odd:
                         best_odd = odd
                         best_bm = bm_slug
+                        best_name = o.get("name", role)
         if not best_bm or best_odd <= 1.0:
             return None
         calc_odd = display_odd(best_odd)
@@ -55,7 +62,8 @@ def compute_arbitrage(
         bookmakers_used.add(best_bm)
         best_legs.append(
             {
-                "outcome": outcome_name,
+                "role": role,
+                "outcome": best_name,
                 "odd": calc_odd,
                 "bookmaker": best_bm,
             }
@@ -68,8 +76,10 @@ def compute_arbitrage(
     if roi_pct < min_margin:
         return None
 
-    return OpportunityResult(
-        market_code=market_code,
+    return OpportunityV2(
+        canonical_market_id=0,
+        market_label="",
+        family="",
         margin_pct=round(roi_pct, 4),
         implied_total=round(implied_sum, 6),
         legs=best_legs,
@@ -77,17 +87,8 @@ def compute_arbitrage(
     )
 
 
-def rank_opportunities(
-    opportunities: list[OpportunityResult],
+def rank_opportunities_v2(
+    opportunities: list[OpportunityV2],
     limit: int = 10,
-) -> list[OpportunityResult]:
+) -> list[OpportunityV2]:
     return sorted(opportunities, key=lambda o: o.margin_pct, reverse=True)[:limit]
-
-
-def allocate_stakes(budget_eur: float, odds: list[float]) -> tuple[list[float], float, float]:
-    """Split budget across arb legs; return stakes, guaranteed return, profit."""
-    implied = sum(1.0 / o for o in odds)
-    stakes = [round(budget_eur * (1.0 / o) / implied, 2) for o in odds]
-    guaranteed_return = round(budget_eur / implied, 2)
-    profit = round(guaranteed_return - budget_eur, 2)
-    return stakes, guaranteed_return, profit

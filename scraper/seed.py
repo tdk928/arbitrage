@@ -1,44 +1,26 @@
 from __future__ import annotations
 
-"""Seed bookmakers, market types, World Cup 2026 competition sources."""
+"""Seed bookmakers + World Cup 2026 sources for v3 (6 sites)."""
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from scraper.db import get_engine, init_db
-from scraper.models import Bookmaker, Competition, CompetitionSource, MarketType
-from sqlalchemy.orm import sessionmaker
+from scraper.models import Bookmaker, Competition, CompetitionSource
+from scraper.wc_constants import WC_EGT_SEARCH_TERMS
 
-MARKET_TYPES = [
-    ("MATCH_1X2", "Match Result 1X2", 3, None),
-    ("GOALS_OU_25", "Goals Over/Under 2.5", 2, "2.5"),
-    ("CORNERS_OU_85", "Corners Over/Under 8.5", 2, "8.5"),
-    ("CORNERS_OU_95", "Corners Over/Under 9.5", 2, "9.5"),
-]
-
-BOOKMAKERS = [
-    ("bet365", "Bet365", "bet365"),
+V3_BOOKMAKERS = [
+    ("efbet", "Efbet", "efbet"),
     ("winbet", "Winbet", "egt"),
     ("inbet", "Inbet", "egt"),
     ("palmsbet", "Palmsbet", "altenar"),
     ("8888", "8888", "sportinno"),
-    ("efbet", "Efbet", "efbet"),
+    ("betano", "Betano", "betano"),
 ]
 
 
 def seed_session(session: Session) -> None:
-    for code, name, outcome_count, line in MARKET_TYPES:
-        if not session.query(MarketType).filter(MarketType.code == code).one_or_none():
-            session.add(
-                MarketType(
-                    code=code,
-                    name=name,
-                    outcome_count=outcome_count,
-                    line=line,
-                )
-            )
-
     bm_ids: dict[str, int] = {}
-    for slug, name, platform in BOOKMAKERS:
+    for slug, name, platform in V3_BOOKMAKERS:
         bm = session.query(Bookmaker).filter(Bookmaker.slug == slug).one_or_none()
         if not bm:
             bm = Bookmaker(slug=slug, name=name, platform=platform)
@@ -61,28 +43,19 @@ def seed_session(session: Session) -> None:
         (
             "efbet",
             "api_tab",
-            {
-                "tab_id": 59354,
-                "tournament_id": 1701,
-            },
+            {"tab_id": 59354, "tournament_id": 1701},
             "https://efbet.com/sport/soccer-120/national-teams-1204/world-cup-1701",
         ),
         (
             "winbet",
             "api_tournament",
-            {
-                "tournament_name": "Световно Първенство",
-                "search_terms": ["South Africa", "Mexico", "Germany", "Brazil"],
-            },
+            {"tournament_name": "Световно Първенство", "search_terms": WC_EGT_SEARCH_TERMS},
             "https://www.winbet.bg/sport",
         ),
         (
             "inbet",
             "api_tournament",
-            {
-                "tournament_name": "Световно Първенство",
-                "search_terms": ["South Africa", "Mexico", "Germany", "Brazil"],
-            },
+            {"tournament_name": "Световно Първенство", "search_terms": WC_EGT_SEARCH_TERMS},
             "https://www.inbet.bg/sport",
         ),
         (
@@ -107,12 +80,15 @@ def seed_session(session: Session) -> None:
             "https://8888.bg/sport/",
         ),
         (
-            "bet365",
-            "html_list",
+            "betano",
+            "api_tournament",
             {
-                "hub_url": "https://www.bet365.com/hub/en-gb/football/football-competitions/world-cup"
+                "tournament_id": 189813,
+                "tournament_slug": "svetovno-pervenstvo",
+                "sport_slug": "futbol",
+                "events_req": "la,s,stnf,c,mb,mbl",
             },
-            "https://www.bet365.com/hub/en-gb/football/football-competitions/world-cup",
+            "https://www.betano.bg/sport/futbol/turniri/svetovno-pervenstvo/189813/",
         ),
     ]
 
@@ -145,11 +121,10 @@ def seed_session(session: Session) -> None:
 
 def main() -> None:
     init_db()
-    engine = get_engine()
-    Session = sessionmaker(bind=engine)
+    Session = sessionmaker(bind=get_engine())
     with Session() as session:
         seed_session(session)
-    print("Seed completed.")
+    print("Seed completed (6 bookmakers + WC 2026 sources).")
 
 
 if __name__ == "__main__":

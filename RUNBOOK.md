@@ -54,7 +54,23 @@ Use this **from 11 June 2026 onward** when WC fixtures are actually today/tomorr
 
 Until then, `opportunities: []` is **normal** — opener is 11 June, not today.
 
-### Test all WC fixtures (no date filter)
+### All World Cup 2026 fixtures (recommended on `world-cup-future` branch)
+
+Scrapes every WC match listed on all 6 bookmakers (Jun 11 – Jul 20), stores odds, computes arbitrage:
+
+```bash
+python -m scraper.run_world_cup --min-margin 1 --limit 10
+```
+
+Or via API:
+
+```bash
+curl -X POST "http://localhost:8000/arbitrage/world-cup/run?min_margin=1&limit=10"
+```
+
+Response includes `stats` with fixtures per bookmaker, matches linked, and coverage.
+
+### Test all fixtures (no date filter)
 
 ```bash
 python -m scraper.run_once --time-window all --min-margin 1 --limit 10
@@ -212,13 +228,62 @@ Arbitrage requires odds from **≥ 2 bookmakers** and `margin_pct >= min_margin`
 
 ---
 
-## 11. Project layout
+## 12. V2 all-markets pipeline (`world-cup-all` branch)
+
+Parallel pipeline: scrapes **all** markets from efbet, winbet, inbet, palmsbet, and bet365 hub.
+Uses separate v2 tables — v1 is untouched.
+
+**Phase 3 (v2.1):** bet365 hub parser (1X2 from public hub) + fuzzy cross-language market name matching for long-tail markets.
+
+### One-time v2 setup
+
+```bash
+python -m scraper.db_init_v2
+```
+
+### Run v2 scrape (CLI)
+
+```bash
+python -m scraper.run_world_cup_v2 --min-margin 1 --limit 10
+```
+
+### Run v2 via API
+
+```bash
+curl -X POST "http://localhost:8000/arbitrage/v2/world-cup/run?min_margin=1&limit=10"
+
+curl "http://localhost:8000/arbitrage/v2/opportunities?limit=10"
+
+# Debug: raw vs canonical market mapping
+curl "http://localhost:8000/arbitrage/v2/markets?limit=50"
+```
+
+### V2 tables
+
+| Table | Purpose |
+|-------|---------|
+| `scrape_runs_v2` | Run metadata + stats |
+| `raw_markets_v2` | Every market as scraped |
+| `canonical_markets_v2` | Cross-bookmaker market identity |
+| `odds_snapshots_v2` | Canonical odds per bookmaker |
+| `arbitrage_opportunities_v2` | Generalized N-outcome arbs |
+
+Schema reference: `sql/002_v2_all_markets.sql`
+
+---
+
+## 13. Project layout
 
 ```
 arbitrage/
-├── api/              # FastAPI (POST /arbitrage/run)
-├── scraper/          # Scrapers, matcher, arbitrage engine
-├── sql/001_init.sql  # Schema reference
-├── RUNBOOK.md        # This file
-└── README.md         # Architecture overview
+├── api/                    # FastAPI v1 + v2 routes
+├── scraper/
+│   ├── v2/                 # All-markets pipeline (EGT/Altenar/efbet/bet365)
+│   ├── run_world_cup_v2.py # V2 CLI entry
+│   └── ...
+├── sql/
+│   ├── 001_init.sql        # V1 schema
+│   └── 002_v2_all_markets.sql
+├── RUNBOOK.md
+└── README.md
 ```

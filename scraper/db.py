@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from scraper.config import get_settings
@@ -15,6 +14,8 @@ _SessionLocal = None
 def get_engine():
     global _engine, _SessionLocal
     if _engine is None:
+        from sqlalchemy import create_engine
+
         settings = get_settings()
         _engine = create_engine(settings.database_url, pool_pre_ping=True)
         _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
@@ -22,7 +23,10 @@ def get_engine():
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=get_engine())
+    """Apply pending SQL migrations (Flyway-style)."""
+    from scraper.migrate import migrate
+
+    migrate()
 
 
 def get_session() -> Generator[Session, None, None]:

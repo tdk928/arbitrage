@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -59,6 +60,7 @@ def run_pipeline(
 
     all_fixtures: list[RawFixture] = []
     errors: list[str] = []
+    fixtures_by_bookmaker: dict[str, int] = {}
 
     for src in sources:
         bm = session.get(Bookmaker, src.bookmaker_id)
@@ -68,13 +70,14 @@ def run_pipeline(
             scraper = get_scraper(bm.slug)
             fixtures = scraper.list_fixtures(src.discovery_config or {})
             filtered = filter_fixtures(fixtures, time_window)
+            fixtures_by_bookmaker[bm.slug] = len(filtered)
             all_fixtures.extend(filtered)
         except Exception as exc:
+            fixtures_by_bookmaker[bm.slug] = 0
             errors.append(f"{bm.slug} list: {exc}")
 
     groups = group_fixtures(all_fixtures)
     match_by_id: dict[int, Match] = {}
-    fixture_to_match: dict[tuple[str, str], int] = {}
 
     for group in groups:
         if not group:
@@ -114,11 +117,8 @@ def run_pipeline(
         match.external_ids = external_ids
         match_by_id[match.id] = match
 
-        for fx in group:
-            fixture_to_match[(fx.bookmaker_slug, fx.external_id)] = match.id
-
-    # Fetch odds per match per bookmaker
     odds_by_match_market: dict[tuple[int, str], dict[str, list]] = {}
+    odds_by_bookmaker: dict[str, int] = defaultdict(int)
 
     for src in sources:
         bm = session.get(Bookmaker, src.bookmaker_id)
@@ -131,6 +131,8 @@ def run_pipeline(
                 continue
             try:
                 markets = scraper.fetch_markets(ext_id, src.discovery_config or {})
+                if not markets:
+                    continue
                 for mkt in markets:
                     mt = market_types.get(mkt.market_code)
                     if not mt:
@@ -146,6 +148,7 @@ def run_pipeline(
                             success=True,
                         )
                     )
+                    odds_by_bookmaker[bm.slug] += 1
                     key = (match.id, mkt.market_code)
                     if key not in odds_by_match_market:
                         odds_by_match_market[key] = {}
