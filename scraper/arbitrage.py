@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from scraper.v2.arbitrage import roi_pct_from_implied
+
 MARKET_OUTCOME_MAP: dict[str, list[str]] = {
     "MATCH_1X2": ["1", "X", "2"],
     "GOALS_OU_25": ["Over", "Under"],
@@ -61,13 +63,13 @@ def compute_arbitrage(
     if len(bookmakers_used) < 2:
         return None
 
-    margin_pct = (1.0 - implied_sum) * 100.0
-    if margin_pct < min_margin:
+    roi_pct = roi_pct_from_implied(implied_sum)
+    if roi_pct < min_margin:
         return None
 
     return OpportunityResult(
         market_code=market_code,
-        margin_pct=round(margin_pct, 4),
+        margin_pct=round(roi_pct, 4),
         implied_total=round(implied_sum, 6),
         legs=best_legs,
         bookmaker_count=len(bookmakers_used),

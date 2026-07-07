@@ -47,15 +47,15 @@ def main(argv: list[str] | None = None) -> int:
         print()
         top10 = result.get("top10") or []
         if not top10:
-            print(f"No arbitrage opportunities >= {args.min_margin}% margin.")
+            print(f"No arbitrage opportunities >= {args.min_margin}% ROI.")
         else:
-            print(f"Top {len(top10)} arbitrage (>= {args.min_margin}% margin):")
+            print(f"Top {len(top10)} arbitrage (>= {args.min_margin}% ROI):")
             for row in top10:
                 legs = " | ".join(
                     f"{leg['role']}@{leg['bookmaker']} {leg['odd']}" for leg in row["legs"]
                 )
                 print(
-                    f"  #{row['rank']} {row['margin_pct']:.2f}% — "
+                    f"  #{row['rank']} {row['margin_pct']:.2f}% ROI — "
                     f"{row['match']} — {row['market']} — {legs}"
                 )
     return 0 if result["status"] != "failed" else 1

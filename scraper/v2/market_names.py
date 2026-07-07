@@ -30,6 +30,10 @@ _MARKET_PHRASE_ALIASES: dict[str, str] = {
     "total cards": "total_cards",
     "брой картони": "total_cards",
     "картони": "total_cards",
+    "1-во полувреме - брой голове": "total_goals_1h",
+    "1во полувреме - общ брой голове": "total_goals_1h",
+    "1st half - total goals": "total_goals_1h",
+    "голове през 1-во полувреме": "total_goals_1h",
     "и двата отбора да отбележат": "btts",
     "both teams to score": "btts",
     "asian handicap": "handicap",
@@ -71,7 +75,13 @@ def semantic_market_slug(name: str, line: str | None = None) -> str:
 
     for phrase, slug in sorted(_MARKET_PHRASE_ALIASES.items(), key=lambda x: -len(x[0])):
         if phrase in text:
-            if extracted_line and slug in ("total_goals", "total_corners", "total_cards", "handicap"):
+            if extracted_line and slug in (
+                "total_goals",
+                "total_corners",
+                "total_cards",
+                "total_goals_1h",
+                "handicap",
+            ):
                 return f"{slug}_{extracted_line}"
             return slug
 

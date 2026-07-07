@@ -4,6 +4,13 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def roi_pct_from_implied(implied_sum: float) -> float:
+    """ROI on total stake when splitting optimally across arb legs."""
+    if implied_sum <= 0:
+        return 0.0
+    return (1.0 / implied_sum - 1.0) * 100.0
+
+
 @dataclass
 class OpportunityV2:
     canonical_market_id: int
@@ -22,6 +29,7 @@ def compute_arbitrage_v2(
 ) -> OpportunityV2 | None:
     """
     bookmaker_odds: {bookmaker_slug: [{"role": "over", "name": "...", "odd": 1.9}, ...]}
+    margin_pct field stores ROI%: (1/implied_sum - 1) * 100.
     """
     if len(outcome_roles) < 2:
         return None
@@ -58,15 +66,15 @@ def compute_arbitrage_v2(
     if len(bookmakers_used) < 2:
         return None
 
-    margin_pct = (1.0 - implied_sum) * 100.0
-    if margin_pct < min_margin:
+    roi_pct = roi_pct_from_implied(implied_sum)
+    if roi_pct < min_margin:
         return None
 
     return OpportunityV2(
         canonical_market_id=0,
         market_label="",
         family="",
-        margin_pct=round(margin_pct, 4),
+        margin_pct=round(roi_pct, 4),
         implied_total=round(implied_sum, 6),
         legs=best_legs,
         bookmaker_count=len(bookmakers_used),

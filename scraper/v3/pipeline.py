@@ -139,6 +139,7 @@ def run_pipeline_v3(
     odds_count_by_rule: dict[str, int] = defaultdict(int)
     odds_count_by_bm: dict[str, int] = defaultdict(int)
     batch: list[MarketOddsV3] = []
+    seen_odds_keys: set[tuple[int, int, int, str]] = set()
 
     for rule in rules:
         site_rules = {
@@ -176,6 +177,10 @@ def run_pipeline_v3(
                         if needs_line and not parsed.line:
                             continue
                         line = str(parsed.line) if parsed.line else ""
+                        odds_key = (rule.id, match.id, bm.id, line)
+                        if odds_key in seen_odds_keys:
+                            continue
+                        seen_odds_keys.add(odds_key)
                         outcomes_json = [
                             {"role": o.role, "name": o.name, "odd": o.odd}
                             for o in parsed.outcomes

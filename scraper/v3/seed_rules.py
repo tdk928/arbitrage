@@ -11,6 +11,7 @@ BOTH_TEAMS_TO_SCORE_SLUG = "both_teams_to_score"
 MATCH_RESULT_1X2_SLUG = "match_result_1x2"
 TOTAL_CORNERS_OU_SLUG = "total_corners_ou"
 TOTAL_CARDS_OU_SLUG = "total_cards_ou"
+FIRST_HALF_TOTAL_GOALS_OU_SLUG = "first_half_total_goals_ou"
 
 _EGT_GOALS_CRITERIA = {
     "ui_section_contains": "Алт. Брой Голове",
@@ -371,6 +372,73 @@ CARDS_SITE_ROWS: list[dict] = [
 ]
 
 
+_EGT_1H_GOALS_CRITERIA = {
+    "radar_template": "total1stHalf",
+    "market_name_contains": "1st half - total goals",
+    "market_name_excludes_any": [
+        "&",
+        "multigoals",
+        "exact",
+        "odd/even",
+        "halftime/fulltime",
+    ],
+    "line_filter": "half_only",
+    "required_outcome_roles": ["over", "under"],
+}
+
+FIRST_HALF_GOALS_SITE_ROWS: list[dict] = [
+    {
+        "bookmaker_slug": "winbet",
+        "platform": "egt",
+        "ui_label": "Алт. 1-во Полувреме - Брой Голове",
+        "match_criteria": _EGT_1H_GOALS_CRITERIA,
+        "notes": "EGT — 1st half total goals O/U (.5 lines), alt + default sections",
+    },
+    {
+        "bookmaker_slug": "inbet",
+        "platform": "egt",
+        "ui_label": "Алт. 1-во Полувреме - Брой Голове",
+        "match_criteria": _EGT_1H_GOALS_CRITERIA,
+        "notes": "Same EGT 1H goals criteria as winbet",
+    },
+    {
+        "bookmaker_slug": "efbet",
+        "platform": "efbet",
+        "ui_label": "Голове през 1-во Полувреме",
+        "match_criteria": {
+            "original_name_contains": "Голове през 1-во Полувреме",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "efbet 1st half goals O/U — .5 lines + default mainLine",
+    },
+    {
+        "bookmaker_slug": "palmsbet",
+        "platform": "altenar",
+        "ui_label": "1во полувреме - Общ брой голове",
+        "match_criteria": {
+            "type_id": 68,
+            "market_name": "1во полувреме - Общ брой голове",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "Altenar typeId 68 — 1st half total goals (slider O/U groups)",
+    },
+    {
+        "bookmaker_slug": "8888",
+        "platform": "sportinno",
+        "ui_label": "1-во Полувреме - Брой Голове",
+        "match_criteria": {
+            "type_id": 82,
+            "market_group_name": "1-во Полувреме - Брой Голове",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "SportInno typeId 82 — 1st half total goals",
+    },
+]
+
+
 def _seed_rule_sites(session: Session, rule: MarketRuleSet, site_rows: list[dict]) -> None:
     for row in site_rows:
         existing = (
@@ -531,6 +599,34 @@ def seed_total_cards_ou(session: Session) -> MarketRuleSet:
     return rule
 
 
+def seed_first_half_total_goals_ou(session: Session) -> MarketRuleSet:
+    rule = (
+        session.query(MarketRuleSet)
+        .filter(MarketRuleSet.slug == FIRST_HALF_TOTAL_GOALS_OU_SLUG)
+        .one_or_none()
+    )
+    if not rule:
+        rule = MarketRuleSet(
+            slug=FIRST_HALF_TOTAL_GOALS_OU_SLUG,
+            label="Over/Under 1st Half Total Goals",
+            description=(
+                "First half total goals Over/Under. Lines must end in .5 only "
+                "(0.5, 1.5, 2.5 …). Includes default/main and alt lines."
+            ),
+            outcome_roles=["over", "under"],
+            scope="1h",
+            line_filter="half_only",
+            is_active=True,
+        )
+        session.add(rule)
+        session.flush()
+
+    _seed_rule_sites(session, rule, FIRST_HALF_GOALS_SITE_ROWS)
+    session.flush()
+    session.refresh(rule)
+    return rule
+
+
 def seed_all_rules(session: Session) -> list[MarketRuleSet]:
     return [
         seed_total_goals_ou(session),
@@ -538,4 +634,5 @@ def seed_all_rules(session: Session) -> list[MarketRuleSet]:
         seed_match_result_1x2(session),
         seed_total_corners_ou(session),
         seed_total_cards_ou(session),
+        seed_first_half_total_goals_ou(session),
     ]
