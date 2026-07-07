@@ -101,6 +101,13 @@ def fetch_raw_payload(
         html = _fetch_bet365_hub_html(discovery_config)
         return {"html": html, "external_id": external_id}
 
+    if platform == "betano":
+        from scraper.platforms.registry import get_scraper
+
+        scraper = get_scraper(bookmaker_slug)
+        payload = scraper.fetch_event_payload(external_id, discovery_config)
+        return payload
+
     if platform == "sportinno":
         from scraper.platforms.registry import get_scraper
 

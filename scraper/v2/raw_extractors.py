@@ -621,6 +621,138 @@ def extract_all_sportinno_markets(event: dict[str, Any], bookmaker_slug: str) ->
     return markets
 
 
+def _betano_outcome_role(name: str) -> str | None:
+    label = normalize_text(name)
+    if label in ("1", "x", "2"):
+        return "X" if label == "x" else label.upper()
+    if label.startswith("над") or label == "over":
+        return "over"
+    if label.startswith("под") or label == "under":
+        return "under"
+    if label in ("да", "yes"):
+        return "yes"
+    if label in ("не", "no"):
+        return "no"
+    return None
+
+
+def _betano_family(type_id: int, market_name: str) -> tuple[str, str, str] | None:
+    name_l = market_name.lower()
+    if type_id == 2850:
+        return "match_1x2", "match", "ft"
+    if type_id == 1:
+        return "match_1x2", "match", "ft"
+    if type_id == 13 and "общо голове" in name_l and "полувреме" not in name_l:
+        return "total_goals", "match", "ft"
+    if type_id == 15:
+        return "btts", "match", "ft"
+    if type_id == 34 and "корнери" in name_l and "полувреме" not in name_l:
+        return "total_corners", "match", "ft"
+    if type_id == 65 and "картони" in name_l and "полувреме" not in name_l:
+        return "total_cards", "match", "ft"
+    if type_id == 14:
+        return "total_goals_1h", "1h", "1h"
+    return None
+
+
+def _betano_ou_lines(market: dict[str, Any]) -> list[tuple[str, list[ParsedOutcome]]]:
+    by_line: dict[str, dict[str, ParsedOutcome]] = {}
+    for sel in market.get("selections") or []:
+        role = _betano_outcome_role(str(sel.get("name", "")))
+        if role not in ("over", "under"):
+            continue
+        line_val = sel.get("handicap")
+        if line_val is None:
+            continue
+        line = str(line_val).rstrip("0").rstrip(".") if isinstance(line_val, float) else str(line_val)
+        if line.endswith(".0"):
+            line = line[:-2]
+        odd = parse_odd(sel.get("price"))
+        if not odd:
+            continue
+        by_line.setdefault(line, {})[role] = ParsedOutcome(
+            role=role,
+            name=str(sel.get("name", "")),
+            odd=odd,
+        )
+    rows: list[tuple[str, list[ParsedOutcome]]] = []
+    for line, roles in by_line.items():
+        if "over" in roles and "under" in roles:
+            rows.append((line, [roles["over"], roles["under"]]))
+    return rows
+
+
+def extract_all_betano_markets(payload: dict[str, Any], bookmaker_slug: str) -> list[ParsedMarket]:
+    event = (payload.get("data") or {}).get("event") or {}
+    markets: list[ParsedMarket] = []
+    for market in event.get("markets") or []:
+        type_id = int(market.get("typeId") or 0)
+        raw_name = str(market.get("name") or "").strip()
+        if not raw_name or is_promo_market(raw_name):
+            continue
+        family_info = _betano_family(type_id, raw_name)
+        if not family_info:
+            continue
+        family, scope, period = family_info
+        market_id = str(market.get("id") or market.get("uniqueId") or "")
+
+        if family in {"total_goals", "total_corners", "total_cards", "total_goals_1h"}:
+            for line, outs in _betano_ou_lines(market):
+                markets.append(
+                    ParsedMarket(
+                        external_id=f"{market_id}:{line}",
+                        market_name=f"{raw_name} {line}",
+                        platform="betano",
+                        bookmaker_slug=bookmaker_slug,
+                        family=family,
+                        period=period,
+                        scope=scope,
+                        line=line,
+                        outcomes=outs,
+                        provider_template=f"typeId:{type_id}",
+                        specifiers={"type_id": type_id, "market_type": market.get("type")},
+                        raw_payload=market,
+                    )
+                )
+            continue
+
+        outs: list[ParsedOutcome] = []
+        for sel in market.get("selections") or []:
+            role = _betano_outcome_role(str(sel.get("name", "")))
+            odd = parse_odd(sel.get("price"))
+            if not role or not odd:
+                continue
+            outs.append(ParsedOutcome(role=role, name=str(sel.get("name", "")), odd=odd))
+        if family == "match_1x2":
+            roles = {o.role for o in outs}
+            if roles != {"1", "X", "2"}:
+                continue
+            outs = sorted(outs, key=lambda o: ("1", "X", "2").index(o.role))
+        elif family == "btts":
+            roles = {o.role for o in outs}
+            if roles != {"yes", "no"}:
+                continue
+        else:
+            continue
+        markets.append(
+            ParsedMarket(
+                external_id=market_id,
+                market_name=raw_name,
+                platform="betano",
+                bookmaker_slug=bookmaker_slug,
+                family=family,
+                period=period,
+                scope=scope,
+                line=None,
+                outcomes=outs,
+                provider_template=f"typeId:{type_id}",
+                specifiers={"type_id": type_id, "market_type": market.get("type")},
+                raw_payload=market,
+            )
+        )
+    return markets
+
+
 def extract_all_markets(
     platform: str,
     payload: dict[str, Any],
@@ -637,4 +769,6 @@ def extract_all_markets(
         if "marketTypes" not in event and "sportEvent" in event:
             event = event["sportEvent"]
         return extract_all_sportinno_markets(event, bookmaker_slug)
+    if platform == "betano":
+        return extract_all_betano_markets(payload, bookmaker_slug)
     return []

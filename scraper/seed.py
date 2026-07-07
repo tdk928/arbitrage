@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Seed bookmakers + World Cup 2026 sources for v3 (5 sites)."""
+"""Seed bookmakers + World Cup 2026 sources for v3 (6 sites)."""
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -14,6 +14,7 @@ V3_BOOKMAKERS = [
     ("inbet", "Inbet", "egt"),
     ("palmsbet", "Palmsbet", "altenar"),
     ("8888", "8888", "sportinno"),
+    ("betano", "Betano", "betano"),
 ]
 
 
@@ -78,6 +79,17 @@ def seed_session(session: Session) -> None:
             },
             "https://8888.bg/sport/",
         ),
+        (
+            "betano",
+            "api_tournament",
+            {
+                "tournament_id": 189813,
+                "tournament_slug": "svetovno-pervenstvo",
+                "sport_slug": "futbol",
+                "events_req": "la,s,stnf,c,mb,mbl",
+            },
+            "https://www.betano.bg/sport/futbol/turniri/svetovno-pervenstvo/189813/",
+        ),
     ]
 
     for slug, dtype, config, url in sources:
@@ -112,7 +124,7 @@ def main() -> None:
     Session = sessionmaker(bind=get_engine())
     with Session() as session:
         seed_session(session)
-    print("Seed completed (5 bookmakers + WC 2026 sources).")
+    print("Seed completed (6 bookmakers + WC 2026 sources).")
 
 
 if __name__ == "__main__":

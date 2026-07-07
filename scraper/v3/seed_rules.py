@@ -73,6 +73,18 @@ SITE_ROWS: list[dict] = [
         },
         "notes": "SportInno typeId 24 — match total goals",
     },
+    {
+        "bookmaker_slug": "betano",
+        "platform": "betano",
+        "ui_label": "Над/Под Общо голове",
+        "match_criteria": {
+            "type_id": 13,
+            "market_name": "Над/Под Общо голове",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "Betano typeId 13 — match total goals O/U",
+    },
 ]
 
 
@@ -131,6 +143,18 @@ BTTS_SITE_ROWS: list[dict] = [
             "required_outcome_roles": ["yes", "no"],
         },
         "notes": "SportInno typeId 67 — full match BTTS (halves are typeId 119/120)",
+    },
+    {
+        "bookmaker_slug": "betano",
+        "platform": "betano",
+        "ui_label": "Двата отбора да отбележат",
+        "match_criteria": {
+            "type_id": 15,
+            "market_name": "Двата отбора да отбележат",
+            "market_name_exact": True,
+            "required_outcome_roles": ["yes", "no"],
+        },
+        "notes": "Betano typeId 15 — match BTTS",
     },
 ]
 
@@ -196,6 +220,18 @@ MATCH_RESULT_SITE_ROWS: list[dict] = [
             "required_outcome_roles": ["1", "X", "2"],
         },
         "notes": "SportInno typeId 10000023 — plain 1X2 (not PAY/combo variant typeId 23)",
+    },
+    {
+        "bookmaker_slug": "betano",
+        "platform": "betano",
+        "ui_label": "Краен резултат Супер Коефициенти",
+        "match_criteria": {
+            "type_id": 2850,
+            "market_name": "Краен резултат Супер Коефициенти",
+            "market_name_exact": True,
+            "required_outcome_roles": ["1", "X", "2"],
+        },
+        "notes": "Betano typeId 2850 — Супер Коефициенти 1X2 (UI default on WC matches)",
     },
 ]
 
@@ -283,6 +319,18 @@ CORNERS_SITE_ROWS: list[dict] = [
         },
         "notes": "SportInno typeId 134 — full match corners (90 min)",
     },
+    {
+        "bookmaker_slug": "betano",
+        "platform": "betano",
+        "ui_label": "Корнери Над/Под",
+        "match_criteria": {
+            "type_id": 34,
+            "market_name": "Корнери Над/Под",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "Betano typeId 34 — match total corners O/U",
+    },
 ]
 
 
@@ -368,6 +416,18 @@ CARDS_SITE_ROWS: list[dict] = [
             "required_outcome_roles": ["over", "under"],
         },
         "notes": "SportInno typeId 169 — full match cards (90 min)",
+    },
+    {
+        "bookmaker_slug": "betano",
+        "platform": "betano",
+        "ui_label": "Общо картони Над/Под",
+        "match_criteria": {
+            "type_id": 65,
+            "market_name": "Общо картони Над/Под",
+            "line_filter": "half_only",
+            "required_outcome_roles": ["over", "under"],
+        },
+        "notes": "Betano typeId 65 — match total cards O/U",
     },
 ]
 

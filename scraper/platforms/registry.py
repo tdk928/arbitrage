@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from scraper.platforms.altenar import AltenarScraper
+from scraper.platforms.betano import BetanoScraper
 from scraper.platforms.bet365 import Bet365Scraper
 from scraper.platforms.efbet import EfbetScraper
 from scraper.platforms.egt_digital import EgtScraper
@@ -13,6 +14,7 @@ _SCRAPERS: dict[str, PlatformScraper] = {
     "palmsbet": AltenarScraper("palmsbet", "palmsbet.com"),
     "8888": SportInnoScraper(),
     "efbet": EfbetScraper(),
+    "betano": BetanoScraper(),
     "bet365": Bet365Scraper(),
 }
 

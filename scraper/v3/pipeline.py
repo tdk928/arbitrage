@@ -17,7 +17,7 @@ from scraper.v2.raw_fetchers import clear_fetch_caches, fetch_all_markets_for_ev
 from scraper.v3.arbitrage import compute_opportunities_v3, persist_top10_and_audit
 from scraper.v3.criteria import criteria_match
 
-V3_BOOKMAKER_SLUGS = frozenset({"efbet", "winbet", "inbet", "palmsbet", "8888"})
+V3_BOOKMAKER_SLUGS = frozenset({"efbet", "winbet", "inbet", "palmsbet", "8888", "betano"})
 
 
 def _get_or_create_team(session: Session, name: str) -> Team:
