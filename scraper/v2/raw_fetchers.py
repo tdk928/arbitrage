@@ -21,12 +21,26 @@ _ALTENAR_INTEGRATIONS = {
     "palmsbet": "palmsbet.com",
 }
 
-# Per-run cache: bet365 hub HTML is large; fetch once per URL
+# Per-run caches cleared at the start of each scrape run.
 _HUB_HTML_CACHE: dict[str, str] = {}
+_EVENT_MARKETS_CACHE: dict[tuple[str, str, str], list] = {}
+_EVENT_FETCH_HTTP_COUNT = 0
+_EVENT_FETCH_CACHE_HITS = 0
 
 
 def clear_fetch_caches() -> None:
+    global _EVENT_FETCH_HTTP_COUNT, _EVENT_FETCH_CACHE_HITS
     _HUB_HTML_CACHE.clear()
+    _EVENT_MARKETS_CACHE.clear()
+    _EVENT_FETCH_HTTP_COUNT = 0
+    _EVENT_FETCH_CACHE_HITS = 0
+
+
+def get_event_fetch_stats() -> dict[str, int]:
+    return {
+        "event_fetch_http": _EVENT_FETCH_HTTP_COUNT,
+        "event_fetch_cache_hits": _EVENT_FETCH_CACHE_HITS,
+    }
 
 
 def _fetch_bet365_hub_html(discovery_config: dict[str, Any]) -> str:
@@ -137,11 +151,18 @@ def fetch_all_markets_for_event(
     external_id: str,
     discovery_config: dict[str, Any],
 ) -> list:
+    global _EVENT_FETCH_HTTP_COUNT, _EVENT_FETCH_CACHE_HITS
+
+    cache_key = (bookmaker_slug, str(external_id), platform)
+    cached = _EVENT_MARKETS_CACHE.get(cache_key)
+    if cached is not None:
+        _EVENT_FETCH_CACHE_HITS += 1
+        return cached
+
     payload = fetch_raw_payload(bookmaker_slug, platform, external_id, discovery_config)
     if not payload:
-        return []
-
-    if platform == "efbet":
+        markets: list = []
+    elif platform == "efbet":
         from scraper.v2.raw_extractors import extract_all_efbet_markets
 
         markets = extract_all_efbet_markets(payload.get("details") or {}, bookmaker_slug)
@@ -151,13 +172,15 @@ def fetch_all_markets_for_event(
             for m in extract_all_efbet_markets(listing, bookmaker_slug):
                 if m.external_id not in seen:
                     markets.append(m)
-        return markets
-
-    if platform == "bet365":
-        return extract_all_bet365_markets_from_html(
+    elif platform == "bet365":
+        markets = extract_all_bet365_markets_from_html(
             payload["html"],
             external_id=str(payload.get("external_id") or external_id),
             bookmaker_slug=bookmaker_slug,
         )
+    else:
+        markets = extract_all_markets(platform, payload, bookmaker_slug)
 
-    return extract_all_markets(platform, payload, bookmaker_slug)
+    _EVENT_FETCH_HTTP_COUNT += 1
+    _EVENT_MARKETS_CACHE[cache_key] = markets
+    return markets

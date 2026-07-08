@@ -13,7 +13,11 @@ from scraper.normalize import canonical_key, normalize_team
 from scraper.platforms.registry import get_scraper
 from scraper.time_filter import filter_fixtures
 from scraper.types import RawFixture
-from scraper.v2.raw_fetchers import clear_fetch_caches, fetch_all_markets_for_event
+from scraper.v2.raw_fetchers import (
+    clear_fetch_caches,
+    fetch_all_markets_for_event,
+    get_event_fetch_stats,
+)
 from scraper.v3.arbitrage import compute_opportunities_v3, persist_top10_and_audit
 from scraper.v3.criteria import criteria_match
 
@@ -222,6 +226,7 @@ def run_pipeline_v3(
         "odds_rows_by_rule": dict(odds_count_by_rule),
         "odds_rows_by_bookmaker": dict(odds_count_by_bm),
         "bookmakers": sorted(V3_BOOKMAKER_SLUGS),
+        **get_event_fetch_stats(),
         "arbitrage_candidates": len(opportunities),
         "arbitrage_top10": len(top10),
         "min_margin_pct": min_margin,
