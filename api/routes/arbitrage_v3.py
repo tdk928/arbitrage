@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from scraper.db import get_engine, init_db
 from scraper.models_v3 import MarketRuleSet, MarketRuleSiteMatch
 from scraper.v3.pipeline import run_pipeline_v3
-from scraper.v3.response import fetch_top10_current
+from scraper.v3.response import fetch_audit_top20, fetch_top10_current
 from scraper.v3.seed_rules import seed_all_rules
 
 router = APIRouter(prefix="/arbitrage/v3", tags=["arbitrage-v3"])
@@ -134,3 +134,8 @@ def run_arbitrage_v3(
 @router.get("/top10")
 def get_top10(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     return fetch_top10_current(db)
+
+
+@router.get("/audit")
+def get_audit_top20(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    return fetch_audit_top20(db)

@@ -17,6 +17,8 @@ from scraper.models_v3 import (
 from scraper.normalize import normalize_team
 from scraper.v2.arbitrage import compute_arbitrage_v2
 
+AUDIT_LIMIT = 20
+
 
 @dataclass
 class OpportunityV3:
@@ -108,6 +110,67 @@ def compute_opportunities_v3(
     return opportunities
 
 
+def build_event_key(opp: OpportunityV3) -> str:
+    nh, na = normalize_team(opp.home_team), normalize_team(opp.away_team)
+    pair = tuple(sorted([nh, na]))
+    kickoff = opp.kickoff_utc.isoformat() if opp.kickoff_utc else ""
+    line = opp.line or ""
+    return f"{pair[0]}|{pair[1]}|{kickoff}|{opp.rule_slug}|{line}"
+
+
+def _audit_fields_from_opportunity(
+    opp: OpportunityV3,
+    scrape_run_id: int,
+    captured_at: datetime,
+) -> dict[str, Any]:
+    return {
+        "scrape_run_id": scrape_run_id,
+        "captured_at": captured_at,
+        "event_key": build_event_key(opp),
+        "rule_set_id": opp.rule_set_id,
+        "rule_slug": opp.rule_slug,
+        "line": opp.line,
+        "margin_pct": opp.margin_pct,
+        "implied_total": opp.implied_total,
+        "bookmaker_count": opp.bookmaker_count,
+        "home_team": opp.home_team,
+        "away_team": opp.away_team,
+        "kickoff_utc": opp.kickoff_utc,
+        "market_label": opp.market_label,
+        "legs": opp.legs,
+    }
+
+
+def merge_top10_into_audit(
+    session: Session,
+    scrape_run_id: int,
+    top10: list[OpportunityV3],
+    captured_at: datetime,
+) -> None:
+    for opp in top10:
+        fields = _audit_fields_from_opportunity(opp, scrape_run_id, captured_at)
+        event_key = fields.pop("event_key")
+        existing = session.query(ArbitrageAudit).filter_by(event_key=event_key).one_or_none()
+        if existing is None:
+            session.add(ArbitrageAudit(event_key=event_key, **fields))
+            continue
+        if opp.margin_pct > float(existing.margin_pct):
+            for key, value in fields.items():
+                setattr(existing, key, value)
+
+    session.flush()
+
+    rows = (
+        session.query(ArbitrageAudit)
+        .order_by(ArbitrageAudit.margin_pct.desc(), ArbitrageAudit.id.asc())
+        .all()
+    )
+    for row in rows[AUDIT_LIMIT:]:
+        session.delete(row)
+
+    session.flush()
+
+
 def persist_top10_and_audit(
     session: Session,
     scrape_run_id: int,
@@ -138,24 +201,7 @@ def persist_top10_and_audit(
                 captured_at=captured_at,
             )
         )
-        session.add(
-            ArbitrageAudit(
-                scrape_run_id=scrape_run_id,
-                captured_at=captured_at,
-                rank=rank,
-                rule_set_id=opp.rule_set_id,
-                rule_slug=opp.rule_slug,
-                line=opp.line,
-                margin_pct=opp.margin_pct,
-                implied_total=opp.implied_total,
-                bookmaker_count=opp.bookmaker_count,
-                home_team=opp.home_team,
-                away_team=opp.away_team,
-                kickoff_utc=opp.kickoff_utc,
-                market_label=opp.market_label,
-                legs=opp.legs,
-            )
-        )
+    merge_top10_into_audit(session, scrape_run_id, ranked, captured_at)
 
     session.flush()
     return ranked

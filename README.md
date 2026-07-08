@@ -28,11 +28,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Option A: local Postgres (create DB first: createdb arbitrage)
+# Local Postgres (create DB first: createdb arbitrage)
 export DATABASE_URL="postgresql://YOUR_USER@localhost:5432/arbitrage"
-
-# Option B: Docker
-docker compose up -d
 
 # Create tables + seed bookmakers/competition config
 python -m scraper.db_init   # or: python -c "from scraper.db import init_db; init_db()"
