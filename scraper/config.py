@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    jwt_secret: str = "change-me-in-production"
+    jwt_expire_minutes: int = 60
+
     http_timeout: float = 30.0
     user_agent: str = (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
