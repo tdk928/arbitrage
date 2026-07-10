@@ -23,6 +23,11 @@
 | `refactor/audit-table-top20` | merged | `GET /arbitrage/v3/audit` |
 | `feature/auth-login-register` | merged | `/auth/*` register, login, list users |
 | `feature/auth-user-management` | merged | PATCH user, 24h activate, Postman, local DB setup |
+| `fix/efbet-goals-hydration-market` | merged | Bugfix: Efbet O/U goals — без API промяна |
+
+---
+
+> **Поддръжка:** Обновявай този файл преди всеки merge в `development` (нови/премахнати endpoints, UI бележки, bugfix-и).
 
 ---
 
@@ -220,6 +225,15 @@ curl -X POST "http://localhost:8000/auth/users/user%40example.com/activate" \
 **Postman:** `postman/Arbitrage API.postman_collection.json` + `Arbitrage Local.postman_environment.json`
 
 **Local Postgres:** `scripts/setup_postgres_user.sh` създава `arbitrage/arbitrage` user; `scripts/init_db.sh` го вика автоматично.
+
+---
+
+### 11. Efbet goals hydration market fix (`fix/efbet-goals-hydration-market`)
+
+Bugfix в v3 market selection за Efbet `total_goals_ou` — hydration-break пазарът („Голове В Мача Преди Първа Пауза За Хидратация“) вече не се бърка с match total O/U.
+
+- **Без API промяна** — само `match_criteria` в DB (`original_name_ends_with_line`)
+- След deploy: `python -m scraper.seed_market_rules` + нов scrape
 
 ---
 
