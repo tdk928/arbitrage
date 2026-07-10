@@ -106,6 +106,80 @@ def test_efbet_goals_original_name_excludes_half_time(make_market):
     assert criteria_match(criteria, half) is False
 
 
+def test_efbet_goals_rejects_hydration_break_market(make_market):
+    from scraper.v2.types import ParsedOutcome
+
+    criteria = next(r["match_criteria"] for r in GOALS_SITE_ROWS if r["bookmaker_slug"] == "efbet")
+    hydration = make_market(
+        market_name="0.5",
+        line="0.5",
+        platform="efbet",
+        bookmaker_slug="efbet",
+        specifiers={"original_name": "Голове В Мача Преди Първа Пауза За Хидратация"},
+        outcomes=[
+            ParsedOutcome(role="over", name="Над", odd=2.35),
+            ParsedOutcome(role="under", name="Под", odd=1.67),
+        ],
+    )
+    assert criteria_match(criteria, hydration) is False
+
+    match_total = make_market(
+        market_name="0.5",
+        line="0.5",
+        platform="efbet",
+        bookmaker_slug="efbet",
+        specifiers={"original_name": "Голове в Мача 0.5"},
+        outcomes=[
+            ParsedOutcome(role="over", name="Над", odd=1.01),
+            ParsedOutcome(role="under", name="Под", odd=14.50),
+        ],
+    )
+    assert criteria_match(criteria, match_total) is True
+
+
+def test_efbet_goals_pipeline_prefers_match_total_over_hydration_break(make_market):
+    from scraper.v2.types import ParsedOutcome
+    from tests.helpers import select_odds_rows_from_markets
+
+    criteria = next(r["match_criteria"] for r in GOALS_SITE_ROWS if r["bookmaker_slug"] == "efbet")
+    markets = [
+        make_market(
+            market_name="0.5",
+            line="0.5",
+            platform="efbet",
+            bookmaker_slug="efbet",
+            specifiers={"original_name": "Голове В Мача Преди Първа Пауза За Хидратация"},
+            outcomes=[
+                ParsedOutcome(role="over", name="Над", odd=2.35),
+                ParsedOutcome(role="under", name="Под", odd=1.67),
+            ],
+        ),
+        make_market(
+            market_name="0.5",
+            line="0.5",
+            platform="efbet",
+            bookmaker_slug="efbet",
+            specifiers={"original_name": "Голове в Мача 0.5"},
+            outcomes=[
+                ParsedOutcome(role="over", name="Над", odd=1.01),
+                ParsedOutcome(role="under", name="Под", odd=14.50),
+            ],
+        ),
+    ]
+
+    rows = select_odds_rows_from_markets(
+        markets,
+        rule_id=1,
+        rule_line_filter="half_only",
+        match_criteria=criteria,
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["line"] == "0.5"
+    assert rows[0]["outcomes"][0]["odd"] == 1.01
+    assert rows[0]["outcomes"][1]["odd"] == 14.50
+
+
 def test_palmsbet_type_id_and_exact_market_name(make_market):
     criteria = next(r["match_criteria"] for r in GOALS_SITE_ROWS if r["bookmaker_slug"] == "palmsbet")
     match = make_market(

@@ -44,10 +44,11 @@ SITE_ROWS: list[dict] = [
         "match_criteria": {
             "original_name_contains": "Голове в Мача",
             "original_name_excludes_any": ["полувреме", "1-во", "2-ро"],
+            "original_name_ends_with_line": True,
             "line_filter": "half_only",
             "required_outcome_roles": ["over", "under"],
         },
-        "notes": "efbet Totals — match goals O/U (originalName prefix)",
+        "notes": "efbet Totals — match goals O/U (originalName must end with line, e.g. 'Голове в Мача 0.5')",
     },
     {
         "bookmaker_slug": "palmsbet",

@@ -87,4 +87,12 @@ def criteria_match(criteria: dict[str, Any], market: ParsedMarket) -> bool:
         if any(x.lower() in orig for x in orig_excl):
             return False
 
+    if criteria.get("original_name_ends_with_line"):
+        if not market.line:
+            return False
+        orig = str(market.specifiers.get("original_name") or "").strip()
+        line = str(market.line).strip()
+        if not orig.lower().endswith(line.lower()):
+            return False
+
     return True
