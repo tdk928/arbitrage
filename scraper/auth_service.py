@@ -98,3 +98,36 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
 def list_all_users(db: Session) -> list[User]:
     return db.query(User).order_by(User.id).all()
+
+
+def update_user_profile(db: Session, email: str, updates: dict) -> User | None:
+    user = get_user_by_email(db, email)
+    if user is None:
+        return None
+
+    if "phone" in updates:
+        user.phone = updates["phone"]
+    if "active_from" in updates:
+        user.active_from = updates["active_from"]
+    if "active_to" in updates:
+        user.active_to = updates["active_to"]
+
+    active_from = user.active_from
+    active_to = user.active_to
+    if active_from is not None and active_to is not None and active_from > active_to:
+        raise ValueError("valid_from must be before or equal to valid_to")
+
+    db.commit()
+    return get_user_by_email(db, email)
+
+
+def activate_user_for_24h(db: Session, email: str, *, now: datetime | None = None) -> User | None:
+    user = get_user_by_email(db, email)
+    if user is None:
+        return None
+
+    current = now or datetime.now(timezone.utc)
+    user.active_from = current
+    user.active_to = current + timedelta(hours=24)
+    db.commit()
+    return get_user_by_email(db, email)

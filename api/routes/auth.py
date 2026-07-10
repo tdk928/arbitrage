@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from scraper.auth_service import (
     ADMIN_ROLE_SLUG,
+    activate_user_for_24h,
     authenticate_user,
     create_access_token,
     decode_access_token,
     get_user_by_id,
     list_all_users,
     register_user,
+    update_user_profile,
 )
 from scraper.db import get_engine, init_db
 from scraper.models_auth import User
@@ -72,6 +74,12 @@ class UserListItem(BaseModel):
 class UserListResponse(BaseModel):
     count: int
     users: list[UserListItem]
+
+
+class UserUpdateRequest(BaseModel):
+    phone: Optional[str] = Field(default=None, max_length=32)
+    valid_from: Optional[datetime] = None
+    valid_to: Optional[datetime] = None
 
 
 def get_current_user(
@@ -146,3 +154,57 @@ def list_users(
     users = list_all_users(db)
     items = [_user_to_list_item(user) for user in users]
     return UserListResponse(count=len(items), users=items)
+
+
+@router.patch("/users/{email}", response_model=UserListItem)
+def update_user(
+    email: EmailStr,
+    body: UserUpdateRequest,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No fields to update",
+        )
+
+    field_map = {
+        "phone": "phone",
+        "valid_from": "active_from",
+        "valid_to": "active_to",
+    }
+    db_updates = {field_map[key]: value for key, value in updates.items()}
+
+    try:
+        user = update_user_profile(db, str(email), db_updates)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    return _user_to_list_item(user)
+
+
+@router.post("/users/{email}/activate", response_model=UserListItem)
+def activate_user(
+    email: EmailStr,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = activate_user_for_24h(db, str(email))
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    return _user_to_list_item(user)

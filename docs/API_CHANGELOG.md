@@ -21,7 +21,8 @@
 | `feature/v3-event-fetch-cache` | merged | Backend cache (без API промяна) |
 | `feature/v3-scrape-api` | merged | `POST /arbitrage/v3/run`, `GET /top10` |
 | `refactor/audit-table-top20` | merged | `GET /arbitrage/v3/audit` |
-| `feature/auth-login-register` | **не е merge-нат** | `/auth/*` — виж секция „Pending“ |
+| `feature/auth-login-register` | merged | `/auth/*` register, login, list users |
+| `feature/auth-user-management` | merged | PATCH user, 24h activate, Postman, local DB setup |
 
 ---
 
@@ -83,38 +84,7 @@ Rule-based pipeline с Flyway migrations, market rules в Postgres, arbitrage п
 **Market rules:** `total_goals_ou`, `both_teams_to_score`, `match_result_1x2`, `total_corners_ou`, `total_cards_ou`, `first_half_total_goals_ou`  
 **Детайли:** `docs/MARKET_RULES_V3.md`
 
-**Нови endpoints:**
-
-| Method | Path | Описание |
-|--------|------|----------|
-| `GET` | `/arbitrage/v3/rules` | Списък активни rules |
-| `GET` | `/arbitrage/v3/rules/{slug}/sites` | Bookmaker mapping за rule |
-| `POST` | `/arbitrage/v3/rules/seed` | Seed rules в DB |
-
-**`GET /arbitrage/v3/rules` query:**
-
-- `slug` (optional) — филтър по rule slug
-
-**Response пример (`GET /rules`):**
-
-```json
-{
-  "count": 6,
-  "rules": [
-    {
-      "id": 1,
-      "slug": "total_goals_ou",
-      "label": "Over/Under Total Goals",
-      "description": "...",
-      "outcome_roles": ["over", "under"],
-      "scope": "match",
-      "line_filter": "half_lines",
-      "is_active": true,
-      "site_matches": [...]
-    }
-  ]
-}
-```
+> **Забележка:** `GET/POST /arbitrage/v3/rules*` endpoints са **премахнати** от публичното API. Seed остава само през CLI (`scripts/init_db.sh` / `scraper.seed_market_rules`).
 
 ---
 
@@ -195,11 +165,67 @@ Rolling audit таблица — top 20 уникални събития по mar
 
 ---
 
-## Pending: Auth API (`feature/auth-login-register`)
+### 10. Auth user management (`feature/auth-user-management`)
 
-> **Не е merge-нат в `development` към момента на този документ.**  
-> Branch: `feature/auth-login-register`  
-> След merge добави CORS + auth router в `api/main.py`.
+Admin endpoints за управление на потребители от UI + локална dev инфраструктура.
+
+**Нови endpoints:**
+
+| Method | Path | Auth | Описание |
+|--------|------|------|----------|
+| `PATCH` | `/auth/users/{email}` | Admin Bearer | Partial update: `phone`, `valid_from`, `valid_to` |
+| `POST` | `/auth/users/{email}/activate` | Admin Bearer | Бързо 24ч абонамент (без body) |
+
+**Премахнати endpoints (не са публични):**
+
+| Method | Path | Причина |
+|--------|------|---------|
+| `GET` | `/arbitrage/v3/rules` | Само internal/CLI seed |
+| `GET` | `/arbitrage/v3/rules/{slug}/sites` | Само internal/CLI seed |
+| `POST` | `/arbitrage/v3/rules/seed` | Само internal/CLI seed |
+
+#### `PATCH /auth/users/{email}`
+
+Partial update — изпращай само променените полета.
+
+**Body (пример):**
+
+```json
+{
+  "phone": "+359888123456",
+  "valid_from": "2026-07-08T10:00:00.000Z",
+  "valid_to": "2026-07-10T18:00:00.000Z"
+}
+```
+
+**Response (200):** `UserListItem` (`email`, `phone`, `valid_from`, `valid_to`)
+
+- API `valid_from` / `valid_to` ↔ DB `active_from` / `active_to`
+- `400` — празен body или `valid_from > valid_to`
+- `404` — потребителят не съществува
+
+#### `POST /auth/users/{email}/activate`
+
+Бързо активиране за 24 часа — за admin UI („Activate“ бутон).
+
+- **Без request body**
+- Задава `valid_from = now`, `valid_to = now + 24h` (UTC)
+- **Response (200):** същият формат като PATCH
+
+```bash
+curl -X POST "http://localhost:8000/auth/users/user%40example.com/activate" \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+**Postman:** `postman/Arbitrage API.postman_collection.json` + `Arbitrage Local.postman_environment.json`
+
+**Local Postgres:** `scripts/setup_postgres_user.sh` създава `arbitrage/arbitrage` user; `scripts/init_db.sh` го вика автоматично.
+
+---
+
+## Auth API (`/auth/*`)
+
+CORS за `http://localhost:5173` е конфигуриран в `api/main.py`.
 
 ### Endpoints
 
@@ -208,6 +234,8 @@ Rolling audit таблица — top 20 уникални събития по mar
 | `POST` | `/auth/register` | — | Регистрация (email + password) |
 | `POST` | `/auth/login` | — | Login (email + password) |
 | `GET` | `/auth/users` | Admin Bearer | Списък всички потребители |
+| `PATCH` | `/auth/users/{email}` | Admin Bearer | Partial update на потребител |
+| `POST` | `/auth/users/{email}/activate` | Admin Bearer | 24ч абонамент (без body) |
 
 ### `POST /auth/register`
 
@@ -303,6 +331,14 @@ Authorization: Bearer <admin_access_token>
 - `valid_from` / `valid_to` ← `active_from` / `active_to` в DB
 - `403` — не-admin; `401` — липсва/невалиден токен
 
+### `PATCH /auth/users/{email}` (admin only)
+
+Виж секция 10 по-горе.
+
+### `POST /auth/users/{email}/activate` (admin only)
+
+Виж секция 10 по-горе.
+
 ### DB tables (auth migrations)
 
 - `V007` — `roles` (`client`, `admin`), `users` (`email`, `password_hash`, `role_id`, `registered_at`, `active_from`, `active_to`)
@@ -329,7 +365,7 @@ frontend/src/auth/
 
 1. **Arbitrage данни** — ползвай **v3**: `GET /arbitrage/v3/top10` и `GET /arbitrage/v3/audit`.
 2. **Scrape trigger** — `POST /arbitrage/v3/run` (бавна операция; покажи loading).
-3. **Auth** — след merge на auth branch: `frontend/src/auth/` + Bearer header за admin views.
+3. **Auth** — `register` / `login` + Bearer за admin views; `PATCH` за ръчно edit; `POST .../activate` за 24ч бутон.
 4. **v1/v2** — legacy; не ги ползвай за нов UI освен ако не е изрично нужно.
 
 ---
@@ -346,8 +382,12 @@ curl http://localhost:8000/arbitrage/v3/top10
 # Audit (v3)
 curl http://localhost:8000/arbitrage/v3/audit
 
-# Auth (след merge на auth branch)
+# Auth
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"secret123"}'
+
+# Activate user 24h (admin token)
+curl -X POST "http://localhost:8000/auth/users/user%40example.com/activate" \
+  -H "Authorization: Bearer <admin_token>"
 ```

@@ -1,0 +1,511 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Arbitrage API",
+    "description": "All Arbitrage backend endpoints. Import Arbitrage Local.postman_environment.json and run Auth > Login (admin) first for protected routes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "testEmail", "value": "user@example.com" },
+    { "key": "testPassword", "value": "secret123" },
+    { "key": "adminEmail", "value": "admin@example.com" },
+    { "key": "adminPassword", "value": "secret123" },
+    { "key": "adminToken", "value": "" },
+    { "key": "clientToken", "value": "" },
+    { "key": "userEmailEncoded", "value": "user%40example.com" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "No auth required."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  pm.variables.set('clientToken', json.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            },
+            "description": "Creates a client user. Password min 8 chars. Saves token to clientToken on success."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (client)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.variables.set('clientToken', json.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{testEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Saves token to clientToken on success."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  pm.variables.set('adminToken', json.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Admin-only endpoints need this token. Saves to adminToken."
+          },
+          "response": []
+        },
+        {
+          "name": "List users (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users"]
+            },
+            "description": "Requires admin Bearer token."
+          },
+          "response": []
+        },
+        {
+          "name": "Update user (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+359888123456\",\n  \"valid_from\": \"2026-07-08T10:00:00.000Z\",\n  \"valid_to\": \"2026-07-10T18:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/users/{{userEmailEncoded}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users", "{{userEmailEncoded}}"]
+            },
+            "description": "Partial update. valid_from/valid_to map to DB active_from/active_to."
+          },
+          "response": []
+        },
+        {
+          "name": "Update user phone only (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+359888123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/users/{{userEmailEncoded}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users", "{{userEmailEncoded}}"]
+            },
+            "description": "Partial update - phone only."
+          },
+          "response": []
+        },
+        {
+          "name": "Activate user 24h (admin)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/users/{{userEmailEncoded}}/activate",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users", "{{userEmailEncoded}}", "activate"]
+            },
+            "description": "Quick subscription: valid_from=now, valid_to=now+24h. No request body."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Arbitrage v3 (recommended)",
+      "item": [
+        {
+          "name": "Run scrape (v3)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v3/run?competition=world-cup-2026&time_window=world_cup&min_margin=1.0&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v3", "run"],
+              "query": [
+                {"key": "competition", "value": "world-cup-2026"},
+                {"key": "time_window", "value": "world_cup", "description": "next_24h | today_tomorrow | all | world_cup"},
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "rules", "value": "total_goals_ou", "description": "Optional; repeat for multiple slugs", "disabled": true}
+              ]
+            },
+            "description": "Slow operation - triggers full v3 scrape + arbitrage."
+          },
+          "response": []
+        },
+        {
+          "name": "Get top10",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v3/top10",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v3", "top10"]
+            },
+            "description": "Current top-10 snapshot without re-scrape."
+          },
+          "response": []
+        },
+        {
+          "name": "Get audit top20",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v3/audit",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v3", "audit"]
+            },
+            "description": "Rolling audit top-20 unique events by margin."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Arbitrage v2 (legacy)",
+      "item": [
+        {
+          "name": "Run scrape (v2)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v2/run?competition=world-cup-2026&time_window=world_cup&min_margin=1.0&limit=10&budget=100.0&seed=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v2", "run"],
+              "query": [
+                {"key": "competition", "value": "world-cup-2026"},
+                {"key": "time_window", "value": "world_cup"},
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "budget", "value": "100.0"},
+                {"key": "seed", "value": "false"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Run world cup (v2)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v2/world-cup/run?min_margin=1.0&limit=10&budget=100.0&seed=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v2", "world-cup", "run"],
+              "query": [
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "budget", "value": "100.0"},
+                {"key": "seed", "value": "false"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get opportunities (v2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v2/opportunities?min_margin=1.0&limit=10&budget=100.0",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v2", "opportunities"],
+              "query": [
+                {"key": "run_id", "value": "", "disabled": true},
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "budget", "value": "100.0"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get markets debug (v2)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/v2/markets?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "v2", "markets"],
+              "query": [
+                {"key": "run_id", "value": "", "disabled": true},
+                {"key": "match_id", "value": "", "disabled": true},
+                {"key": "limit", "value": "50"}
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Arbitrage v1 (legacy)",
+      "item": [
+        {
+          "name": "Run scrape (v1)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/run?competition=world-cup-2026&time_window=today_tomorrow&min_margin=1.0&limit=10&budget=100.0&seed=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "run"],
+              "query": [
+                {"key": "competition", "value": "world-cup-2026"},
+                {"key": "time_window", "value": "today_tomorrow"},
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "budget", "value": "100.0"},
+                {"key": "seed", "value": "false"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Run world cup (v1)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/world-cup/run?min_margin=1.0&limit=10&budget=100.0&seed=false",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "world-cup", "run"],
+              "query": [
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "budget", "value": "100.0"},
+                {"key": "seed", "value": "false"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get opportunities (v1)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/opportunities?min_margin=1.0&limit=10&budget=100.0",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "opportunities"],
+              "query": [
+                {"key": "run_id", "value": "", "disabled": true},
+                {"key": "min_margin", "value": "1.0"},
+                {"key": "limit", "value": "10"},
+                {"key": "budget", "value": "100.0"}
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get board debug (v1)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/arbitrage/board?limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["arbitrage", "board"],
+              "query": [
+                {"key": "run_id", "value": "", "disabled": true},
+                {"key": "limit", "value": "10"}
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
