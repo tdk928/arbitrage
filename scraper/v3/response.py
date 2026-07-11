@@ -12,9 +12,9 @@ def _normalize_line(line: Optional[str]) -> str:
     return line or ""
 
 
-def top10_row_to_dict(row: ArbitrageTop10Current) -> dict[str, Any]:
+def top10_row_to_dict(row: ArbitrageTop10Current, rank: int) -> dict[str, Any]:
     return {
-        "rank": row.rank,
+        "rank": rank,
         "run_id": row.scrape_run_id,
         "rule_slug": row.rule_slug,
         "match": f"{row.home_team} vs {row.away_team}",
@@ -34,10 +34,15 @@ def top10_row_to_dict(row: ArbitrageTop10Current) -> dict[str, Any]:
 def fetch_top10_current(session: Session) -> list[dict[str, Any]]:
     rows = (
         session.query(ArbitrageTop10Current)
-        .order_by(ArbitrageTop10Current.rank)
+        .order_by(
+            ArbitrageTop10Current.margin_pct.desc(),
+            ArbitrageTop10Current.rank.asc(),
+        )
         .all()
     )
-    return [top10_row_to_dict(row) for row in rows]
+    return [
+        top10_row_to_dict(row, rank) for rank, row in enumerate(rows, start=1)
+    ]
 
 
 def audit_row_to_dict(row: ArbitrageAudit, rank: int) -> dict[str, Any]:

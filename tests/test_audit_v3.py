@@ -202,3 +202,54 @@ def test_get_audit_returns_rows_ordered_by_margin():
     assert data[0]["margin_pct"] == 4.66
     assert data[0]["scrape_date"] == "2026-07-08"
     assert data[0]["scrape_time"] == "09:30:15"
+
+
+def test_get_audit_returns_rows_ordered_by_roi():
+    captured_at = datetime(2026, 7, 8, 9, 30, 15, tzinfo=timezone.utc)
+    common = {
+        "scrape_run_id": 6,
+        "captured_at": captured_at,
+        "rule_set_id": 1,
+        "rule_slug": "total_goals_ou",
+        "line": "1.5",
+        "implied_total": 0.9555,
+        "bookmaker_count": 2,
+        "kickoff_utc": datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc),
+        "market_label": "Over/Under Total Goals (match) 1.5",
+        "legs": [],
+    }
+    row_high = ArbitrageAudit(
+        id=2,
+        event_key="spain|brazil|2026-07-10T18:00:00+00:00|total_goals_ou|1.5",
+        margin_pct=8.0,
+        home_team="Spain",
+        away_team="Brazil",
+        **common,
+    )
+    row_low = ArbitrageAudit(
+        id=1,
+        event_key="france|morocco|2026-07-10T18:00:00+00:00|total_goals_ou|1.5",
+        margin_pct=3.0,
+        home_team="France",
+        away_team="Morocco",
+        **common,
+    )
+    session = MagicMock()
+    session.query.return_value.order_by.return_value.limit.return_value.all.return_value = [
+        row_high,
+        row_low,
+    ]
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        response = TestClient(app).get("/arbitrage/v3/audit")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [row["margin_pct"] for row in data] == [8.0, 3.0]
+    assert [row["rank"] for row in data] == [1, 2]

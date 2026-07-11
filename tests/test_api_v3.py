@@ -78,6 +78,55 @@ def test_get_top10_returns_rows_from_db():
     assert data[0]["legs"][0]["bookmaker"] == "betano"
 
 
+def test_get_top10_returns_rows_ordered_by_roi():
+    captured_at = datetime(2026, 7, 8, 9, 0, tzinfo=timezone.utc)
+    common = {
+        "scrape_run_id": 6,
+        "rule_set_id": 1,
+        "rule_slug": "total_goals_ou",
+        "line": "1.5",
+        "implied_total": 0.9555,
+        "bookmaker_count": 2,
+        "kickoff_utc": datetime(2026, 7, 10, 18, 0, tzinfo=timezone.utc),
+        "market_label": "Over/Under Total Goals (match) 1.5",
+        "legs": [],
+        "captured_at": captured_at,
+    }
+    row_high = ArbitrageTop10Current(
+        rank=2,
+        margin_pct=8.0,
+        home_team="Spain",
+        away_team="Brazil",
+        **common,
+    )
+    row_low = ArbitrageTop10Current(
+        rank=1,
+        margin_pct=3.0,
+        home_team="France",
+        away_team="Morocco",
+        **common,
+    )
+    session = MagicMock()
+    session.query.return_value.order_by.return_value.all.return_value = [
+        row_high,
+        row_low,
+    ]
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        response = TestClient(app).get("/arbitrage/v3/top10")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [row["margin_pct"] for row in data] == [8.0, 3.0]
+    assert [row["rank"] for row in data] == [1, 2]
+
+
 def test_post_run_triggers_pipeline(client, monkeypatch):
     captured: dict = {}
 
