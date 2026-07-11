@@ -24,6 +24,7 @@
 | `feature/auth-login-register` | merged | `/auth/*` register, login, list users |
 | `feature/auth-user-management` | merged | PATCH user, 24h activate, Postman, local DB setup |
 | `fix/efbet-goals-hydration-market` | merged | Bugfix: Efbet O/U goals — без API промяна |
+| `feature/admin-delete-arbitrage` | merged | `DELETE /arbitrage/v3/audit`, `DELETE /arbitrage/v3/top10/{rank}` |
 
 ---
 
@@ -237,6 +238,73 @@ Bugfix в v3 market selection за Efbet `total_goals_ou` — hydration-break п
 
 ---
 
+### 12. Admin delete arbitrage (`feature/admin-delete-arbitrage`)
+
+Admin-only изтриване на фалшиви/грешни арбитражи от UI (напр. грешен market match с нереалистичен margin).
+
+| Method | Path | Auth | Описание |
+|--------|------|------|----------|
+| `DELETE` | `/arbitrage/v3/audit` | Admin Bearer | Изтрива 1 ред от `arbitrage_audit` |
+| `DELETE` | `/arbitrage/v3/top10/{rank}` | Admin Bearer | Изтрива 1 ред от `arbitrage_top10_current` по PK `rank` |
+
+Същият admin auth като `GET /auth/users` — `Authorization: Bearer <JWT>` с `role=admin` в payload.
+
+#### `DELETE /arbitrage/v3/audit`
+
+**Body (JSON):**
+
+```json
+{
+  "run_id": 10,
+  "rule_slug": "total_goals_ou",
+  "home_team": "Spain",
+  "away_team": "Belgium",
+  "line": "0.5"
+}
+```
+
+- Match по `scrape_run_id`, `rule_slug`, `home_team`, `away_team`, `line` (`null` и `""` се третират еднакво)
+- `403` — не-admin; `401` — липсва/невалиден токен
+- `404` — записът не съществува
+- **Response:** `204 No Content` (алтернативно `200` с `{ "deleted": true }` — UI приема и двете)
+
+```bash
+curl -X DELETE "http://localhost:8000/arbitrage/v3/audit" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"run_id":10,"rule_slug":"total_goals_ou","home_team":"Spain","away_team":"Belgium","line":"0.5"}'
+```
+
+#### `DELETE /arbitrage/v3/top10/{rank}`
+
+- `rank` — primary key в `arbitrage_top10_current` (обикновено 1–10)
+- `403` / `401` — както audit
+- `404` — rank не съществува
+- **Response:** `204 No Content`
+
+```bash
+curl -X DELETE "http://localhost:8000/arbitrage/v3/top10/3" \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+#### `GET /arbitrage/v3/audit` — допълнение
+
+Response обектите вече включват `event_key` (уникален ключ в `arbitrage_audit`) за по-надеждно delete в бъдеще:
+
+```json
+{
+  "rank": 1,
+  "event_key": "belgium|spain|2026-07-10T18:00:00+00:00|total_goals_ou|0.5",
+  "run_id": 10,
+  "rule_slug": "total_goals_ou",
+  ...
+}
+```
+
+CORS за `http://localhost:5173` вече покрива `DELETE` (глобално `allow_methods=["*"]` в `api/main.py`).
+
+---
+
 ## Auth API (`/auth/*`)
 
 CORS за `http://localhost:5173` е конфигуриран в `api/main.py`.
@@ -380,7 +448,8 @@ frontend/src/auth/
 1. **Arbitrage данни** — ползвай **v3**: `GET /arbitrage/v3/top10` и `GET /arbitrage/v3/audit`.
 2. **Scrape trigger** — `POST /arbitrage/v3/run` (бавна операция; покажи loading).
 3. **Auth** — `register` / `login` + Bearer за admin views; `PATCH` за ръчно edit; `POST .../activate` за 24ч бутон.
-4. **v1/v2** — legacy; не ги ползвай за нов UI освен ако не е изрично нужно.
+4. **Admin delete** — `DELETE /arbitrage/v3/audit` (JSON body) и `DELETE /arbitrage/v3/top10/{rank}` за премахване на грешни арбитражи.
+5. **v1/v2** — legacy; не ги ползвай за нов UI освен ако не е изрично нужно.
 
 ---
 
@@ -403,5 +472,15 @@ curl -X POST http://localhost:8000/auth/login \
 
 # Activate user 24h (admin token)
 curl -X POST "http://localhost:8000/auth/users/user%40example.com/activate" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Delete audit entry (admin)
+curl -X DELETE "http://localhost:8000/arbitrage/v3/audit" \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"run_id":10,"rule_slug":"total_goals_ou","home_team":"Spain","away_team":"Belgium","line":"0.5"}'
+
+# Delete top10 entry (admin)
+curl -X DELETE "http://localhost:8000/arbitrage/v3/top10/3" \
   -H "Authorization: Bearer <admin_token>"
 ```

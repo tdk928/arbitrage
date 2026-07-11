@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from scraper.models_v3 import ArbitrageAudit, ArbitrageTop10Current
+
+
+def _normalize_line(line: Optional[str]) -> str:
+    return line or ""
 
 
 def top10_row_to_dict(row: ArbitrageTop10Current) -> dict[str, Any]:
@@ -39,6 +44,7 @@ def audit_row_to_dict(row: ArbitrageAudit, rank: int) -> dict[str, Any]:
     captured_at = row.captured_at
     return {
         "rank": rank,
+        "event_key": row.event_key,
         "run_id": row.scrape_run_id,
         "rule_slug": row.rule_slug,
         "match": f"{row.home_team} vs {row.away_team}",
@@ -65,3 +71,41 @@ def fetch_audit_top20(session: Session) -> list[dict[str, Any]]:
         .all()
     )
     return [audit_row_to_dict(row, rank) for rank, row in enumerate(rows, start=1)]
+
+
+def delete_audit_entry(
+    session: Session,
+    *,
+    run_id: int,
+    rule_slug: str,
+    home_team: str,
+    away_team: str,
+    line: Optional[str],
+) -> bool:
+    row = (
+        session.query(ArbitrageAudit)
+        .filter(
+            ArbitrageAudit.scrape_run_id == run_id,
+            ArbitrageAudit.rule_slug == rule_slug,
+            ArbitrageAudit.home_team == home_team,
+            ArbitrageAudit.away_team == away_team,
+            func.coalesce(ArbitrageAudit.line, "") == _normalize_line(line),
+        )
+        .one_or_none()
+    )
+    if row is None:
+        return False
+
+    session.delete(row)
+    session.commit()
+    return True
+
+
+def delete_top10_rank(session: Session, rank: int) -> bool:
+    row = session.get(ArbitrageTop10Current, rank)
+    if row is None:
+        return False
+
+    session.delete(row)
+    session.commit()
+    return True

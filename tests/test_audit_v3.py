@@ -198,6 +198,7 @@ def test_get_audit_returns_rows_ordered_by_margin():
     data = response.json()
     assert len(data) == 1
     assert data[0]["rank"] == 1
+    assert data[0]["event_key"] == "france|morocco|2026-07-10T18:00:00+00:00|total_goals_ou|1.5"
     assert data[0]["margin_pct"] == 4.66
     assert data[0]["scrape_date"] == "2026-07-08"
     assert data[0]["scrape_time"] == "09:30:15"
