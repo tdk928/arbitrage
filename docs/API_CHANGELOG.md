@@ -25,6 +25,7 @@
 | `feature/auth-user-management` | merged | PATCH user, 24h activate, Postman, local DB setup |
 | `fix/efbet-goals-hydration-market` | merged | Bugfix: Efbet O/U goals — без API промяна |
 | `feature/admin-delete-arbitrage` | merged | `DELETE /arbitrage/v3/audit`, `DELETE /arbitrage/v3/top10/{rank}` |
+| `feature/auth-users-role-field` | merged | `role` в `GET /auth/users` response |
 
 ---
 
@@ -401,6 +402,7 @@ Authorization: Bearer <admin_access_token>
   "users": [
     {
       "email": "user@example.com",
+      "role": "client",
       "phone": null,
       "valid_from": null,
       "valid_to": null
@@ -408,6 +410,8 @@ Authorization: Bearer <admin_access_token>
   ]
 }
 ```
+
+- `role` — `client` или `admin` (от DB `roles.slug`)
 
 - Връща **всички** потребители (без филтър по subscription)
 - `valid_from` / `valid_to` ← `active_from` / `active_to` в DB

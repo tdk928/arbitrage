@@ -97,7 +97,12 @@ def authenticate_user(db: Session, email: str, password: str) -> User | None:
 
 
 def list_all_users(db: Session) -> list[User]:
-    return db.query(User).order_by(User.id).all()
+    return (
+        db.query(User)
+        .options(joinedload(User.role))
+        .order_by(User.id)
+        .all()
+    )
 
 
 def update_user_profile(db: Session, email: str, updates: dict) -> User | None:

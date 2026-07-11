@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -66,6 +66,7 @@ class TokenResponse(BaseModel):
 
 class UserListItem(BaseModel):
     email: EmailStr
+    role: Literal["client", "admin"]
     phone: Optional[str] = None
     valid_from: Optional[datetime] = None
     valid_to: Optional[datetime] = None
@@ -116,6 +117,7 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 def _user_to_list_item(user: User) -> UserListItem:
     return UserListItem(
         email=user.email,
+        role=user.role.slug,
         phone=user.phone,
         valid_from=user.active_from,
         valid_to=user.active_to,

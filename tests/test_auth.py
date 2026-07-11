@@ -197,8 +197,10 @@ def test_list_users_returns_dto_for_admin(client):
     assert response.status_code == 200
     payload = response.json()
     assert payload["count"] == 2
+    assert payload["users"][0]["role"] == "admin"
     assert payload["users"][1] == {
         "email": "client@example.com",
+        "role": "client",
         "phone": "+359888123456",
         "valid_from": client_user.active_from.isoformat().replace("+00:00", "Z"),
         "valid_to": client_user.active_to.isoformat().replace("+00:00", "Z"),
@@ -258,6 +260,7 @@ def test_update_user_updates_profile_fields(client):
     assert response.status_code == 200
     assert response.json() == {
         "email": "client@example.com",
+        "role": "client",
         "phone": "+359888123456",
         "valid_from": client_user.active_from.isoformat().replace("+00:00", "Z"),
         "valid_to": client_user.active_to.isoformat().replace("+00:00", "Z"),
