@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,16 +8,92 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routes.arbitrage_v3 import get_db, router
+from api.routes.auth import get_current_user, require_subscribed_client_or_admin
+from scraper.models_auth import Role, User
+from scraper.models_v3 import ArbitrageTop10Current
 
 app = FastAPI()
 app.include_router(router)
 
-from scraper.models_v3 import ArbitrageTop10Current
+
+def _make_user(
+    *,
+    email: str = "user@example.com",
+    role_slug: str = "client",
+    active_from: datetime | None = None,
+    active_to: datetime | None = None,
+) -> User:
+    role = Role(id=1 if role_slug == "client" else 2, slug=role_slug, name=role_slug.title())
+    return User(
+        id=1,
+        email=email,
+        password_hash="hashed",
+        role_id=role.id,
+        registered_at=datetime(2026, 7, 9, tzinfo=timezone.utc),
+        active_from=active_from,
+        active_to=active_to,
+        role=role,
+    )
+
+
+def _subscribed_client() -> User:
+    now = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
+    return _make_user(
+        active_from=now - timedelta(hours=1),
+        active_to=now + timedelta(hours=23),
+    )
+
+
+def _override_subscribed_client():
+    app.dependency_overrides[require_subscribed_client_or_admin] = lambda: _subscribed_client()
 
 
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+def test_get_top10_requires_auth(client):
+    response = client.get("/arbitrage/v3/top10")
+    assert response.status_code == 401
+
+
+def test_get_top10_forbidden_without_active_subscription(client):
+    app.dependency_overrides[get_current_user] = lambda: _make_user()
+    try:
+        response = client.get(
+            "/arbitrage/v3/top10",
+            headers={"Authorization": "Bearer client-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Active subscription required"
+
+
+def test_get_top10_allowed_for_admin_without_subscription(client):
+    session = MagicMock()
+    session.query.return_value.order_by.return_value.all.return_value = []
+
+    def override_db():
+        yield session
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[require_subscribed_client_or_admin] = lambda: _make_user(
+        email="admin@example.com",
+        role_slug="admin",
+    )
+    try:
+        response = client.get(
+            "/arbitrage/v3/top10",
+            headers={"Authorization": "Bearer admin-token"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 def test_get_top10_returns_empty_list_when_no_rows():
@@ -28,8 +104,12 @@ def test_get_top10_returns_empty_list_when_no_rows():
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = TestClient(app).get("/arbitrage/v3/top10")
+        response = TestClient(app).get(
+            "/arbitrage/v3/top10",
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -64,8 +144,12 @@ def test_get_top10_returns_rows_from_db():
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = TestClient(app).get("/arbitrage/v3/top10")
+        response = TestClient(app).get(
+            "/arbitrage/v3/top10",
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -116,8 +200,12 @@ def test_get_top10_returns_rows_ordered_by_roi():
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = TestClient(app).get("/arbitrage/v3/top10")
+        response = TestClient(app).get(
+            "/arbitrage/v3/top10",
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -125,6 +213,16 @@ def test_get_top10_returns_rows_ordered_by_roi():
     data = response.json()
     assert [row["margin_pct"] for row in data] == [8.0, 3.0]
     assert [row["rank"] for row in data] == [1, 2]
+
+
+def test_get_audit_requires_auth(client):
+    response = client.get("/arbitrage/v3/audit")
+    assert response.status_code == 401
+
+
+def test_post_run_requires_auth(client):
+    response = client.post("/arbitrage/v3/run")
+    assert response.status_code == 401
 
 
 def test_post_run_triggers_pipeline(client, monkeypatch):
@@ -148,6 +246,7 @@ def test_post_run_triggers_pipeline(client, monkeypatch):
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
         response = client.post(
             "/arbitrage/v3/run",
@@ -158,6 +257,7 @@ def test_post_run_triggers_pipeline(client, monkeypatch):
                 "limit": 10,
                 "rules": ["total_goals_ou", "both_teams_to_score"],
             },
+            headers={"Authorization": "Bearer client-token"},
         )
     finally:
         app.dependency_overrides.clear()
@@ -184,8 +284,13 @@ def test_post_run_returns_400_on_pipeline_error(client, monkeypatch):
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = client.post("/arbitrage/v3/run", params={"competition": "missing"})
+        response = client.post(
+            "/arbitrage/v3/run",
+            params={"competition": "missing"},
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 

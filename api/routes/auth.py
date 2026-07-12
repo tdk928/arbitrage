@@ -11,9 +11,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from scraper.auth_service import (
     ADMIN_ROLE_SLUG,
+    CLIENT_ROLE_SLUG,
     activate_user_for_24h,
     authenticate_user,
     create_access_token,
+    deactivate_user,
     decode_access_token,
     get_user_by_id,
     list_all_users,
@@ -114,6 +116,26 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_subscribed_client_or_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role.slug == ADMIN_ROLE_SLUG:
+        return current_user
+
+    if current_user.role.slug == CLIENT_ROLE_SLUG:
+        if not current_user.has_active_subscription():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Active subscription required",
+            )
+        return current_user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Client or admin access required",
+    )
+
+
 def _user_to_list_item(user: User) -> UserListItem:
     return UserListItem(
         email=user.email,
@@ -203,6 +225,22 @@ def activate_user(
     db: Session = Depends(get_db),
 ):
     user = activate_user_for_24h(db, str(email))
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    return _user_to_list_item(user)
+
+
+@router.post("/users/{email}/deactivate", response_model=UserListItem)
+def deactivate_user_subscription(
+    email: EmailStr,
+    _: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = deactivate_user(db, str(email))
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

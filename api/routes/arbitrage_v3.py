@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, sessionmaker
 
-from api.routes.auth import require_admin
+from api.routes.auth import require_admin, require_subscribed_client_or_admin
 from scraper.db import get_engine, init_db
 from scraper.models_auth import User
 from scraper.v3.pipeline import run_pipeline_v3
@@ -51,6 +51,7 @@ def run_arbitrage_v3(
     min_margin: float = Query(default=1.0, ge=0),
     limit: int = Query(default=10, ge=1, le=100),
     rules: Optional[list[str]] = Query(default=None),
+    _: User = Depends(require_subscribed_client_or_admin),
     db: Session = Depends(get_db),
 ):
     try:
@@ -68,12 +69,18 @@ def run_arbitrage_v3(
 
 
 @router.get("/top10")
-def get_top10(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def get_top10(
+    _: User = Depends(require_subscribed_client_or_admin),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
     return fetch_top10_current(db)
 
 
 @router.get("/audit")
-def get_audit_top20(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def get_audit_top20(
+    _: User = Depends(require_subscribed_client_or_admin),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
     return fetch_audit_top20(db)
 
 

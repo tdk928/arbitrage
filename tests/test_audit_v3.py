@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routes.arbitrage_v3 import get_db, router
+from api.routes.auth import require_subscribed_client_or_admin
+from scraper.models_auth import Role, User
 from scraper.models_v3 import ArbitrageAudit
 from scraper.v3.arbitrage import (
     AUDIT_LIMIT,
@@ -18,6 +20,25 @@ from scraper.v3.arbitrage import (
 
 app = FastAPI()
 app.include_router(router)
+
+
+def _subscribed_client() -> User:
+    now = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
+    role = Role(id=1, slug="client", name="Client")
+    return User(
+        id=2,
+        email="client@example.com",
+        password_hash="hashed",
+        role_id=role.id,
+        registered_at=datetime(2026, 7, 9, tzinfo=timezone.utc),
+        active_from=now - timedelta(hours=1),
+        active_to=now + timedelta(hours=23),
+        role=role,
+    )
+
+
+def _override_subscribed_client():
+    app.dependency_overrides[require_subscribed_client_or_admin] = lambda: _subscribed_client()
 
 
 def _opp(
@@ -155,8 +176,12 @@ def test_get_audit_returns_empty_list_when_no_rows():
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = TestClient(app).get("/arbitrage/v3/audit")
+        response = TestClient(app).get(
+            "/arbitrage/v3/audit",
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -189,8 +214,12 @@ def test_get_audit_returns_rows_ordered_by_margin():
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = TestClient(app).get("/arbitrage/v3/audit")
+        response = TestClient(app).get(
+            "/arbitrage/v3/audit",
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -244,8 +273,12 @@ def test_get_audit_returns_rows_ordered_by_roi():
         yield session
 
     app.dependency_overrides[get_db] = override_db
+    _override_subscribed_client()
     try:
-        response = TestClient(app).get("/arbitrage/v3/audit")
+        response = TestClient(app).get(
+            "/arbitrage/v3/audit",
+            headers={"Authorization": "Bearer client-token"},
+        )
     finally:
         app.dependency_overrides.clear()
 

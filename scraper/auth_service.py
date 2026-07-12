@@ -136,3 +136,14 @@ def activate_user_for_24h(db: Session, email: str, *, now: datetime | None = Non
     user.active_to = current + timedelta(hours=24)
     db.commit()
     return get_user_by_email(db, email)
+
+
+def deactivate_user(db: Session, email: str) -> User | None:
+    user = get_user_by_email(db, email)
+    if user is None:
+        return None
+
+    user.active_from = None
+    user.active_to = None
+    db.commit()
+    return get_user_by_email(db, email)

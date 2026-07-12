@@ -417,3 +417,72 @@ def test_activate_user_for_24h_sets_window():
     assert user.active_to == now + timedelta(hours=24)
     session.commit.assert_called_once()
 
+
+def test_deactivate_user_clears_subscription(client):
+    session = MagicMock()
+    admin = _make_user(role_slug="admin", email="admin@example.com")
+    client_user = _make_user(email="client@example.com")
+    client_user.id = 2
+    client_user.active_from = None
+    client_user.active_to = None
+
+    def override_db():
+        yield session
+
+    with patch("api.routes.auth.deactivate_user", return_value=client_user) as deactivate_mock:
+        app.dependency_overrides[get_db] = override_db
+        app.dependency_overrides[require_admin] = lambda: admin
+        try:
+            response = client.post(
+                "/auth/users/client%40example.com/deactivate",
+                headers={"Authorization": "Bearer admin-token"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["email"] == "client@example.com"
+    assert response.json()["valid_from"] is None
+    assert response.json()["valid_to"] is None
+    deactivate_mock.assert_called_once_with(session, "client@example.com")
+
+
+def test_deactivate_user_returns_404_for_missing_user(client):
+    session = MagicMock()
+    admin = _make_user(role_slug="admin", email="admin@example.com")
+
+    def override_db():
+        yield session
+
+    with patch("api.routes.auth.deactivate_user", return_value=None):
+        app.dependency_overrides[get_db] = override_db
+        app.dependency_overrides[require_admin] = lambda: admin
+        try:
+            response = client.post(
+                "/auth/users/missing%40example.com/deactivate",
+                headers={"Authorization": "Bearer admin-token"},
+            )
+        finally:
+            app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
+def test_deactivate_user_clears_active_window():
+    from scraper.auth_service import deactivate_user
+
+    session = MagicMock()
+    now = datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc)
+    user = _make_user(email="client@example.com")
+    user.active_from = now
+    user.active_to = now + timedelta(hours=24)
+
+    with patch("scraper.auth_service.get_user_by_email", side_effect=[user, user]):
+        result = deactivate_user(session, "client@example.com")
+
+    assert result is user
+    assert user.active_from is None
+    assert user.active_to is None
+    session.commit.assert_called_once()
+

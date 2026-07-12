@@ -26,6 +26,8 @@
 | `fix/efbet-goals-hydration-market` | merged | Bugfix: Efbet O/U goals — без API промяна |
 | `feature/admin-delete-arbitrage` | merged | `DELETE /arbitrage/v3/audit`, `DELETE /arbitrage/v3/top10/{rank}` |
 | `feature/auth-users-role-field` | merged | `role` в `GET /auth/users` response |
+| `feature/auth-deactivate-user` | pending | `POST /auth/users/{email}/deactivate` |
+| `feature/secure-arbitrage-v3` | pending | Auth + subscription за `GET /top10`, `GET /audit`, `POST /run` |
 
 ---
 
@@ -306,6 +308,51 @@ CORS за `http://localhost:5173` вече покрива `DELETE` (глобал
 
 ---
 
+### 13. Deactivate user subscription (`feature/auth-deactivate-user`)
+
+Admin endpoint за деактивиране на потребителски абонамент от UI („Deactivate“ бутон).
+
+| Method | Path | Auth | Описание |
+|--------|------|------|----------|
+| `POST` | `/auth/users/{email}/deactivate` | Admin Bearer | Нулира `valid_from` / `valid_to` (без body) |
+
+#### `POST /auth/users/{email}/deactivate`
+
+- **Без request body**
+- Задава `active_from = null`, `active_to = null` в DB
+- **Response (200):** `UserListItem` с `valid_from: null`, `valid_to: null`
+- `404` — потребителят не съществува
+
+```bash
+curl -X POST "http://localhost:8000/auth/users/user%40example.com/deactivate" \
+  -H "Authorization: Bearer <admin_token>"
+```
+
+---
+
+### 14. Secure arbitrage v3 read endpoints (`feature/secure-arbitrage-v3`)
+
+v3 arbitrage данните вече **не са публични**. Изискват Bearer JWT и:
+
+- **admin** — винаги има достъп
+- **client** — само при активен абонамент (`valid_from` ≤ now ≤ `valid_to`)
+
+| Method | Path | Auth | Описание |
+|--------|------|------|----------|
+| `GET` | `/arbitrage/v3/top10` | Subscribed client / Admin Bearer | Top 10 арбитражи |
+| `GET` | `/arbitrage/v3/audit` | Subscribed client / Admin Bearer | Audit top 20 |
+| `POST` | `/arbitrage/v3/run` | Subscribed client / Admin Bearer | Trigger scrape |
+
+- `401` — липсва/невалиден токен
+- `403` — client без активен абонамент
+
+```bash
+curl http://localhost:8000/arbitrage/v3/audit \
+  -H "Authorization: Bearer <token>"
+```
+
+---
+
 ## Auth API (`/auth/*`)
 
 CORS за `http://localhost:5173` е конфигуриран в `api/main.py`.
@@ -319,6 +366,7 @@ CORS за `http://localhost:5173` е конфигуриран в `api/main.py`.
 | `GET` | `/auth/users` | Admin Bearer | Списък всички потребители |
 | `PATCH` | `/auth/users/{email}` | Admin Bearer | Partial update на потребител |
 | `POST` | `/auth/users/{email}/activate` | Admin Bearer | 24ч абонамент (без body) |
+| `POST` | `/auth/users/{email}/deactivate` | Admin Bearer | Деактивира абонамент (без body) |
 
 ### `POST /auth/register`
 
@@ -425,6 +473,10 @@ Authorization: Bearer <admin_access_token>
 
 Виж секция 10 по-горе.
 
+### `POST /auth/users/{email}/deactivate` (admin only)
+
+Виж секция 13 по-горе.
+
 ### DB tables (auth migrations)
 
 - `V007` — `roles` (`client`, `admin`), `users` (`email`, `password_hash`, `role_id`, `registered_at`, `active_from`, `active_to`)
@@ -449,9 +501,9 @@ frontend/src/auth/
 
 ## Препоръки за UI
 
-1. **Arbitrage данни** — ползвай **v3**: `GET /arbitrage/v3/top10` и `GET /arbitrage/v3/audit`.
-2. **Scrape trigger** — `POST /arbitrage/v3/run` (бавна операция; покажи loading).
-3. **Auth** — `register` / `login` + Bearer за admin views; `PATCH` за ръчно edit; `POST .../activate` за 24ч бутон.
+1. **Arbitrage данни** — ползвай **v3**: `GET /arbitrage/v3/top10` и `GET /arbitrage/v3/audit` с `Authorization: Bearer <token>` (client с активен абонамент или admin).
+2. **Scrape trigger** — `POST /arbitrage/v3/run` (бавна операция; покажи loading; същият Bearer).
+3. **Auth** — `register` / `login` + Bearer за admin views; `PATCH` за ръчно edit; `POST .../activate` за 24ч бутон; `POST .../deactivate` за спиране на абонамент.
 4. **Admin delete** — `DELETE /arbitrage/v3/audit` (JSON body) и `DELETE /arbitrage/v3/top10/{rank}` за премахване на грешни арбитражи.
 5. **v1/v2** — legacy; не ги ползвай за нов UI освен ако не е изрично нужно.
 
@@ -463,11 +515,13 @@ frontend/src/auth/
 # Health
 curl http://localhost:8000/health
 
-# Top 10 (v3)
-curl http://localhost:8000/arbitrage/v3/top10
+# Top 10 (v3) — requires Bearer token
+curl http://localhost:8000/arbitrage/v3/top10 \
+  -H "Authorization: Bearer <token>"
 
-# Audit (v3)
-curl http://localhost:8000/arbitrage/v3/audit
+# Audit (v3) — requires Bearer token
+curl http://localhost:8000/arbitrage/v3/audit \
+  -H "Authorization: Bearer <token>"
 
 # Auth
 curl -X POST http://localhost:8000/auth/login \
@@ -476,6 +530,10 @@ curl -X POST http://localhost:8000/auth/login \
 
 # Activate user 24h (admin token)
 curl -X POST "http://localhost:8000/auth/users/user%40example.com/activate" \
+  -H "Authorization: Bearer <admin_token>"
+
+# Deactivate user subscription (admin token)
+curl -X POST "http://localhost:8000/auth/users/user%40example.com/deactivate" \
   -H "Authorization: Bearer <admin_token>"
 
 # Delete audit entry (admin)
